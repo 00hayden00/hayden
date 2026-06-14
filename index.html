@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<title>Pitch Kings ⚽</title>
+<style>
+  * { box-sizing: border-box; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; height: 100%; overflow: hidden;
+    background: #0b0f0c;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+    touch-action: none; overscroll-behavior: none;
+  }
+  #wrap {
+    position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+  }
+  canvas {
+    background: #228a3c; display: block;
+    width: 100%; height: 100%;
+    object-fit: contain;
+    image-rendering: optimizeQuality;
+  }
+  #hint {
+    position: fixed; bottom: 6px; left: 0; right: 0; text-align: center;
+    color: rgba(255,255,255,.45); font-size: 12px; pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="game" width="900" height="600"></canvas></div>
+<div id="hint">Drag the left side to move • hold SPRINT to dash & smash</div>
+<script>
+"use strict";
+
+// ---------------------------------------------------------------------------
+// Setup & config
+// ---------------------------------------------------------------------------
+const W = 900, H = 600;
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+const MARGIN = 40, GOAL_DEPTH = 28, GOAL_WIDTH = 200;
+const MATCH_SECONDS = 90;
+
+const PLAYER_SPEED = 3.6, SPRINT_SPEED = 5.6;
+const PLAYER_RADIUS = 18, BALL_RADIUS = 12;
+const BALL_FRICTION = 0.985, WALL_BOUNCE = 0.7;
+const KICK_POWER = 7.5, SPRINT_KICK_BONUS = 4.0;
+
+const FIELD = { left: MARGIN, top: MARGIN, right: W - MARGIN, bottom: H - MARGIN,
+                width: W - 2 * MARGIN, height: H - 2 * MARGIN };
+const GOAL_TOP = H / 2 - GOAL_WIDTH / 2, GOAL_BOTTOM = H / 2 + GOAL_WIDTH / 2;
+
+const C = {
+  grassDark: "#22783a", grassLight: "#288a3c", line: "#ebebeb",
+  blue: "#3c82f0", blueDark: "#1e50b4", red: "#eb4646", redDark: "#aa2323",
+  white: "#f5f5f5", black: "#0f1216", yellow: "#ffdc50", net: "#d2d2d2",
+};
+
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
+
+// ---------------------------------------------------------------------------
+// Entities
+// ---------------------------------------------------------------------------
+function makePlayer(x, y, color, dark, controls, isAI) {
+  return { start: [x, y], x, y, color, dark, controls, isAI,
+           facing: color === C.blue ? 1 : -1, sprinting: false };
+}
+function resetPlayer(p) { p.x = p.start[0]; p.y = p.start[1]; }
+
+function movePlayer(p, dx, dy, sprint) {
+  if (dx || dy) {
+    const len = Math.hypot(dx, dy);
+    dx /= len; dy /= len;
+    p.facing = dx >= 0 ? 1 : -1;
+  }
+  p.sprinting = !!sprint;
+  const sp = sprint ? SPRINT_SPEED : PLAYER_SPEED;
+  p.x = clamp(p.x + dx * sp, FIELD.left + PLAYER_RADIUS, FIELD.right - PLAYER_RADIUS);
+  p.y = clamp(p.y + dy * sp, FIELD.top + PLAYER_RADIUS, FIELD.bottom - PLAYER_RADIUS);
+}
+
+const ball = { x: W / 2, y: H / 2, vx: 0, vy: 0, spin: 0 };
+function resetBall(dir = 0) { ball.x = W / 2; ball.y = H / 2; ball.vx = dir * 2; ball.vy = 0; ball.spin = 0; }
+
+function updateBall() {
+  ball.x += ball.vx; ball.y += ball.vy;
+  ball.vx *= BALL_FRICTION; ball.vy *= BALL_FRICTION;
+  ball.spin += Math.hypot(ball.vx, ball.vy) * 0.1;
+  if (Math.abs(ball.vx) < 0.02) ball.vx = 0;
+  if (Math.abs(ball.vy) < 0.02) ball.vy = 0;
+}
+function bounceWalls() {
+  if (ball.y - BALL_RADIUS < FIELD.top) { ball.y = FIELD.top + BALL_RADIUS; ball.vy = -ball.vy * WALL_BOUNCE; }
+  else if (ball.y + BALL_RADIUS > FIELD.bottom) { ball.y = FIELD.bottom - BALL_RADIUS; ball.vy = -ball.vy * WALL_BOUNCE; }
+  const inMouth = GOAL_TOP < ball.y && ball.y < GOAL_BOTTOM;
+  if (ball.x - BALL_RADIUS < FIELD.left && !inMouth) { ball.x = FIELD.left + BALL_RADIUS; ball.vx = -ball.vx * WALL_BOUNCE; }
+  else if (ball.x + BALL_RADIUS > FIELD.right && !inMouth) { ball.x = FIELD.right - BALL_RADIUS; ball.vx = -ball.vx * WALL_BOUNCE; }
+}
+
+// ---------------------------------------------------------------------------
+// Game state
+// ---------------------------------------------------------------------------
+const MENU = "menu", PLAYING = "playing", PAUSED = "paused", GOAL = "goal", FULLTIME = "fulltime";
+let state = MENU, twoPlayer = false;
+let left, right, score, timeLeft, lastTick, stateTimer, goalText, particles;
+
+const keys = {};
+window.addEventListener("keydown", e => {
+  keys[e.key.toLowerCase()] = true;
+  if (["arrowup","arrowdown","arrowleft","arrowright"," "].includes(e.key.toLowerCase())) e.preventDefault();
+  handleKey(e.key.toLowerCase());
+});
+window.addEventListener("keyup", e => { keys[e.key.toLowerCase()] = false; });
+
+function handleKey(k) {
+  if (k === "1" && state === MENU) twoPlayer = false;
+  if (k === "2" && state === MENU) twoPlayer = true;
+  if (k === "enter" && (state === MENU || state === FULLTIME)) startMatch();
+  if (k === "p" && (state === PLAYING || state === PAUSED)) state = (state === PLAYING) ? PAUSED : PLAYING;
+}
+
+function setupMatch() {
+  left = makePlayer(W * 0.28, H / 2, C.blue, C.blueDark,
+    { up: "w", down: "s", left: "a", right: "d", sprint: "shift" }, false);
+  right = makePlayer(W * 0.72, H / 2, C.red, C.redDark,
+    { up: "arrowup", down: "arrowdown", left: "arrowleft", right: "arrowright", sprint: "shift" }, !twoPlayer);
+  score = [0, 0]; timeLeft = MATCH_SECONDS; lastTick = performance.now();
+  stateTimer = 0; goalText = ""; particles = [];
+  resetBall(0);
+}
+function startMatch() { setupMatch(); state = PLAYING; lastTick = performance.now(); }
+
+// ---------------------------------------------------------------------------
+// Touch controls — left-side virtual joystick + sprint button
+// ---------------------------------------------------------------------------
+const touch = { joyId: null, ox: 0, oy: 0, dx: 0, dy: 0, sprintId: null };
+const SPRINT_BTN = { x: W - 95, y: H - 95, r: 58 };
+
+function canvasPoint(t) {
+  const r = canvas.getBoundingClientRect();
+  return { x: (t.clientX - r.left) / r.width * W, y: (t.clientY - r.top) / r.height * H };
+}
+
+canvas.addEventListener("touchstart", e => {
+  e.preventDefault();
+  for (const t of e.changedTouches) {
+    const p = canvasPoint(t);
+    // Menu / full-time: any tap starts (mode toggled by tapping the mode rows).
+    if (state === MENU) { menuTap(p); continue; }
+    if (state === FULLTIME) { startMatch(); continue; }
+    if (state === PAUSED) { state = PLAYING; continue; }
+    // Sprint button (bottom-right)?
+    if (dist(p.x, p.y, SPRINT_BTN.x, SPRINT_BTN.y) <= SPRINT_BTN.r + 10) {
+      touch.sprintId = t.identifier; continue;
+    }
+    // Otherwise start a joystick.
+    if (touch.joyId === null) {
+      touch.joyId = t.identifier; touch.ox = p.x; touch.oy = p.y; touch.dx = 0; touch.dy = 0;
+    }
+  }
+}, { passive: false });
+
+canvas.addEventListener("touchmove", e => {
+  e.preventDefault();
+  for (const t of e.changedTouches) {
+    if (t.identifier === touch.joyId) {
+      const p = canvasPoint(t);
+      let dx = p.x - touch.ox, dy = p.y - touch.oy;
+      const len = Math.hypot(dx, dy), max = 70;
+      if (len > max) { dx = dx / len * max; dy = dy / len * max; }
+      touch.dx = dx; touch.dy = dy;
+    }
+  }
+}, { passive: false });
+
+function endTouch(e) {
+  e.preventDefault();
+  for (const t of e.changedTouches) {
+    if (t.identifier === touch.joyId) { touch.joyId = null; touch.dx = 0; touch.dy = 0; }
+    if (t.identifier === touch.sprintId) { touch.sprintId = null; }
+  }
+}
+canvas.addEventListener("touchend", endTouch, { passive: false });
+canvas.addEventListener("touchcancel", endTouch, { passive: false });
+
+// Mouse fallback for the menu on desktop.
+canvas.addEventListener("mousedown", e => {
+  const p = canvasPoint(e);
+  if (state === MENU) menuTap(p);
+  else if (state === FULLTIME) startMatch();
+  else if (state === PAUSED) state = PLAYING;
+});
+
+const menuRects = {
+  one: { x: W/2 - 200, y: 262, w: 400, h: 44 },
+  two: { x: W/2 - 200, y: 314, w: 400, h: 44 },
+  play: { x: W/2 - 140, y: H - 120, w: 280, h: 60 },
+};
+function inRect(p, r) { return p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h; }
+function menuTap(p) {
+  if (inRect(p, menuRects.one)) twoPlayer = false;
+  else if (inRect(p, menuRects.two)) twoPlayer = true;
+  else if (inRect(p, menuRects.play)) startMatch();
+  else startMatch(); // tapping elsewhere also kicks off
+}
+
+// ---------------------------------------------------------------------------
+// Input gathering
+// ---------------------------------------------------------------------------
+function readKeys(p) {
+  const c = p.controls;
+  const dx = (keys[c.right] ? 1 : 0) - (keys[c.left] ? 1 : 0);
+  const dy = (keys[c.down] ? 1 : 0) - (keys[c.up] ? 1 : 0);
+  return [dx, dy, !!keys[c.sprint]];
+}
+function readTouch() {
+  const dz = 12;
+  let dx = 0, dy = 0;
+  if (touch.joyId !== null && Math.hypot(touch.dx, touch.dy) > dz) { dx = touch.dx; dy = touch.dy; }
+  return [dx, dy, touch.sprintId !== null];
+}
+function readLeftInput() {
+  const [kx, ky, ks] = readKeys(left);
+  const [tx, ty, ts] = readTouch();
+  if (kx || ky || ks) return [kx, ky, ks];
+  return [tx, ty, ts];
+}
+
+function aiInput(p) {
+  let tx, ty;
+  if (p.x < ball.x) { tx = ball.x + 40; ty = ball.y + (p.y < ball.y ? 30 : -30); }
+  else { tx = ball.x + BALL_RADIUS + PLAYER_RADIUS; ty = ball.y; }
+  if (ball.x > W * 0.7 && ball.vx > 0) { tx = (ball.x + FIELD.right) / 2; ty = ball.y; }
+  const ddx = tx - p.x, ddy = ty - p.y;
+  const dx = Math.abs(ddx) < 4 ? 0 : Math.sign(ddx);
+  const dy = Math.abs(ddy) < 4 ? 0 : Math.sign(ddy);
+  return [dx, dy, dist(p.x, p.y, ball.x, ball.y) < 90];
+}
+
+// ---------------------------------------------------------------------------
+// Simulation
+// ---------------------------------------------------------------------------
+function resolveKick(p) {
+  const dx = ball.x - p.x, dy = ball.y - p.y;
+  const d = Math.hypot(dx, dy), minD = PLAYER_RADIUS + BALL_RADIUS;
+  if (d < minD && d > 0) {
+    const nx = dx / d, ny = dy / d;
+    ball.x = p.x + nx * minD; ball.y = p.y + ny * minD;
+    const power = KICK_POWER + (p.sprinting ? SPRINT_KICK_BONUS : 0);
+    ball.vx = nx * power; ball.vy = ny * power;
+  }
+}
+function checkGoal() {
+  const inMouth = GOAL_TOP < ball.y && ball.y < GOAL_BOTTOM;
+  if (!inMouth) return;
+  if (ball.x - BALL_RADIUS < FIELD.left) { score[1]++; scoreGoal("RED"); }
+  else if (ball.x + BALL_RADIUS > FIELD.right) { score[0]++; scoreGoal("BLUE"); }
+}
+function scoreGoal(scorer) {
+  goalText = scorer + " SCORES!";
+  state = GOAL; stateTimer = 90;
+  const col = scorer === "BLUE" ? C.blue : C.red;
+  for (let i = 0; i < 60; i++) {
+    const a = Math.random() * Math.PI * 2, s = 2 + Math.random() * 6;
+    particles.push([ball.x, ball.y, Math.cos(a) * s, Math.sin(a) * s - 3, 25 + Math.random() * 25 | 0, col]);
+  }
+}
+function kickoff() { resetPlayer(left); resetPlayer(right); resetBall(0); state = PLAYING; lastTick = performance.now(); }
+
+function update(now) {
+  if (state === PLAYING) {
+    if (now - lastTick >= 1000) {
+      timeLeft--; lastTick = now;
+      if (timeLeft <= 0) { timeLeft = 0; state = FULLTIME; }
+    }
+    movePlayer(left, ...readLeftInput());
+    movePlayer(right, ...(twoPlayer ? readKeys(right) : aiInput(right)));
+    updateBall(); bounceWalls();
+    resolveKick(left); resolveKick(right);
+    checkGoal();
+  } else if (state === GOAL) {
+    updateBall();
+    if (--stateTimer <= 0) kickoff();
+  }
+  for (const p of particles) { p[0] += p[2]; p[1] += p[3]; p[3] += 0.15; p[4]--; }
+  particles = particles.filter(p => p[4] > 0);
+}
+
+// ---------------------------------------------------------------------------
+// Rendering
+// ---------------------------------------------------------------------------
+let pitchCache = null;
+function buildPitch() {
+  pitchCache = document.createElement("canvas");
+  pitchCache.width = W; pitchCache.height = H;
+  const g = pitchCache.getContext("2d");
+  g.fillStyle = C.grassDark; g.fillRect(0, 0, W, H);
+  const stripes = 10, sw = FIELD.width / stripes;
+  g.fillStyle = C.grassLight;
+  for (let i = 0; i < stripes; i += 2) g.fillRect(FIELD.left + i * sw, FIELD.top, sw + 1, FIELD.height);
+  g.strokeStyle = C.line; g.lineWidth = 3;
+  g.strokeRect(FIELD.left, FIELD.top, FIELD.width, FIELD.height);
+  g.beginPath(); g.moveTo(W / 2, FIELD.top); g.lineTo(W / 2, FIELD.bottom); g.stroke();
+  g.beginPath(); g.arc(W / 2, H / 2, 70, 0, Math.PI * 2); g.stroke();
+  g.beginPath(); g.arc(W / 2, H / 2, 6, 0, Math.PI * 2); g.fillStyle = C.line; g.fill();
+  const bw = 90, bh = 260;
+  g.strokeRect(FIELD.left, H / 2 - bh / 2, bw, bh);
+  g.strokeRect(FIELD.right - bw, H / 2 - bh / 2, bw, bh);
+}
+
+function drawGoals() {
+  for (const goal of [
+    { x: FIELD.left - GOAL_DEPTH, y: GOAL_TOP, w: GOAL_DEPTH, h: GOAL_WIDTH },
+    { x: FIELD.right, y: GOAL_TOP, w: GOAL_DEPTH, h: GOAL_WIDTH }]) {
+    ctx.fillStyle = "#191c20"; ctx.fillRect(goal.x, goal.y, goal.w, goal.h);
+    ctx.strokeStyle = C.net; ctx.lineWidth = 1;
+    for (let gx = goal.x; gx < goal.x + goal.w; gx += 8) { ctx.beginPath(); ctx.moveTo(gx, goal.y); ctx.lineTo(gx, goal.y + goal.h); ctx.stroke(); }
+    for (let gy = goal.y; gy < goal.y + goal.h; gy += 8) { ctx.beginPath(); ctx.moveTo(goal.x, gy); ctx.lineTo(goal.x + goal.w, gy); ctx.stroke(); }
+    ctx.strokeStyle = C.white; ctx.lineWidth = 3; ctx.strokeRect(goal.x, goal.y, goal.w, goal.h);
+  }
+  ctx.strokeStyle = C.yellow; ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.moveTo(FIELD.left, GOAL_TOP); ctx.lineTo(FIELD.left, GOAL_BOTTOM); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(FIELD.right, GOAL_TOP); ctx.lineTo(FIELD.right, GOAL_BOTTOM); ctx.stroke();
+}
+
+function drawPlayer(p) {
+  ctx.fillStyle = "rgba(0,0,0,0.28)";
+  ctx.beginPath(); ctx.ellipse(p.x, p.y + PLAYER_RADIUS - 2, PLAYER_RADIUS, PLAYER_RADIUS * 0.5, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = p.dark; ctx.beginPath(); ctx.arc(p.x, p.y, PLAYER_RADIUS + 2, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(p.x, p.y, PLAYER_RADIUS, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = C.white;
+  ctx.beginPath(); ctx.arc(p.x + p.facing * (PLAYER_RADIUS - 6), p.y, 4, 0, Math.PI * 2); ctx.fill();
+}
+function drawBall() {
+  ctx.fillStyle = "rgba(0,0,0,0.28)";
+  ctx.beginPath(); ctx.ellipse(ball.x, ball.y + BALL_RADIUS - 2, BALL_RADIUS, BALL_RADIUS * 0.5, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = C.white; ctx.beginPath(); ctx.arc(ball.x, ball.y, BALL_RADIUS, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = C.black; ctx.lineWidth = 2; ctx.stroke();
+  ctx.fillStyle = C.black;
+  for (let i = 0; i < 5; i++) {
+    const a = ball.spin + i * Math.PI * 2 / 5;
+    ctx.beginPath(); ctx.arc(ball.x + Math.cos(a) * BALL_RADIUS * 0.5, ball.y + Math.sin(a) * BALL_RADIUS * 0.5, 2, 0, Math.PI * 2); ctx.fill();
+  }
+}
+
+function text(str, x, y, size, color, align = "center", bold = true) {
+  ctx.fillStyle = color;
+  ctx.font = `${bold ? "bold " : ""}${size}px -apple-system, Arial, sans-serif`;
+  ctx.textAlign = align; ctx.textBaseline = "middle";
+  ctx.fillText(str, x, y);
+}
+
+function drawHUD() {
+  ctx.fillStyle = "rgba(0,0,0,0.55)"; ctx.fillRect(W / 2 - 110, 6, 220, 46);
+  text(`${score[0]}  -  ${score[1]}`, W / 2, 28, 30, C.white);
+  ctx.fillStyle = C.blue; ctx.beginPath(); ctx.arc(W / 2 - 92, 29, 10, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = C.red; ctx.beginPath(); ctx.arc(W / 2 + 92, 29, 10, 0, Math.PI * 2); ctx.fill();
+  const m = Math.floor(timeLeft / 60), s = timeLeft % 60;
+  text(`${m}:${s.toString().padStart(2, "0")}`, W / 2, 66, 22, C.white, "center", false);
+}
+
+function drawTouchControls() {
+  // Joystick
+  if (touch.joyId !== null) {
+    ctx.fillStyle = "rgba(255,255,255,0.12)";
+    ctx.beginPath(); ctx.arc(touch.ox, touch.oy, 70, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "rgba(255,255,255,0.4)";
+    ctx.beginPath(); ctx.arc(touch.ox + touch.dx, touch.oy + touch.dy, 32, 0, Math.PI * 2); ctx.fill();
+  }
+  // Sprint button
+  ctx.fillStyle = touch.sprintId !== null ? "rgba(255,220,80,0.55)" : "rgba(255,255,255,0.18)";
+  ctx.beginPath(); ctx.arc(SPRINT_BTN.x, SPRINT_BTN.y, SPRINT_BTN.r, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = "rgba(255,255,255,0.5)"; ctx.lineWidth = 3; ctx.stroke();
+  text("SPRINT", SPRINT_BTN.x, SPRINT_BTN.y, 18, C.white);
+}
+
+function overlay(alpha) { ctx.fillStyle = `rgba(0,0,0,${alpha})`; ctx.fillRect(0, 0, W, H); }
+
+function drawMenu() {
+  text("PITCH KINGS", W / 2, 150, 70, C.white);
+  text("arcade soccer", W / 2, 205, 22, C.yellow, "center", false);
+  // Mode rows
+  const r1 = menuRects.one, r2 = menuRects.two;
+  ctx.fillStyle = !twoPlayer ? "rgba(60,130,240,0.25)" : "rgba(255,255,255,0.06)";
+  ctx.fillRect(r1.x, r1.y, r1.w, r1.h);
+  ctx.fillStyle = twoPlayer ? "rgba(235,70,70,0.25)" : "rgba(255,255,255,0.06)";
+  ctx.fillRect(r2.x, r2.y, r2.w, r2.h);
+  text((!twoPlayer ? "▶ " : "  ") + "1 Player (vs AI)", W / 2, r1.y + 22, 28, !twoPlayer ? C.blue : C.white);
+  text((twoPlayer ? "▶ " : "  ") + "2 Players", W / 2, r2.y + 22, 28, twoPlayer ? C.red : C.white);
+  // Play button
+  const pb = menuRects.play;
+  ctx.fillStyle = "rgba(255,220,80,0.9)"; roundRect(pb.x, pb.y, pb.w, pb.h, 12); ctx.fill();
+  text("KICK OFF", W / 2, pb.y + pb.h / 2, 30, "#1a1a1a");
+  text("Tap a mode, then KICK OFF", W / 2, pb.y - 24, 18, "rgba(255,255,255,0.7)", "center", false);
+}
+function roundRect(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+
+function drawFulltime() {
+  overlay(0.62);
+  let res, col;
+  if (score[0] > score[1]) { res = "BLUE WINS!"; col = C.blue; }
+  else if (score[1] > score[0]) { res = "RED WINS!"; col = C.red; }
+  else { res = "DRAW!"; col = C.white; }
+  text("FULL TIME", W / 2, H / 2 - 90, 64, C.white);
+  text(res, W / 2, H / 2 - 20, 38, col);
+  text(`${score[0]} - ${score[1]}`, W / 2, H / 2 + 30, 36, C.white);
+  text("Tap / press ENTER for a rematch", W / 2, H / 2 + 90, 22, C.yellow, "center", false);
+}
+
+function render() {
+  if (!pitchCache) buildPitch();
+  ctx.drawImage(pitchCache, 0, 0);
+  drawGoals();
+
+  if (state === MENU) { drawMenu(); return; }
+
+  for (const p of particles) {
+    ctx.fillStyle = p[5]; const r = Math.max(1, p[4] / 10);
+    ctx.beginPath(); ctx.arc(p[0], p[1], r, 0, Math.PI * 2); ctx.fill();
+  }
+  drawBall(); drawPlayer(left); drawPlayer(right);
+  drawHUD();
+  if (!twoPlayer) drawTouchControls();
+
+  if (state === PAUSED) { overlay(0.45); text("PAUSED", W / 2, H / 2, 64, C.yellow); text("Tap to resume", W / 2, H / 2 + 55, 22, C.white, "center", false); }
+  else if (state === GOAL) { overlay(0.35); text(goalText, W / 2, H / 2, 64, C.yellow); }
+  else if (state === FULLTIME) drawFulltime();
+}
+
+// ---------------------------------------------------------------------------
+// Loop
+// ---------------------------------------------------------------------------
+function frame(now) {
+  update(now);
+  render();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
