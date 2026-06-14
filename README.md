@@ -22,6 +22,7 @@ It's a single self-contained file (`index.html`) — open it in any modern brows
 | Sprint  | hold `Shift`                 |
 | Pass    | `J`                          |
 | Shoot   | `K` or `Space`               |
+| Tackle (when you don't have the ball) | `K` or `Space` |
 | Switch player (on defense) | `L`           |
 | Pause   | `P`                          |
 | Start / restart | `Enter` (or tap / click) |
@@ -35,7 +36,10 @@ On touchscreens, use the on-screen joystick (drag the left side) and the
   control **auto-switches to whoever is on the ball**.
 - On defense, tap **Switch** (`L`) to take control of a different defender.
 - Carry the ball by moving; **Pass** finds a teammate ahead of you; **Shoot** fires at
-  the open corner of the goal.
+  the open corner of the goal. **Sprinting helps you keep the ball** — hold it too long
+  and a defender will tackle it off you, so move it on.
+- On defense, the **Shoot button doubles as Tackle** (`K`/`Space`): lunge at the carrier
+  to win the ball. Players hold their roles, mark up, and spread across the pitch.
 - A **minimap** at the top shows the whole pitch so you can see off-screen players.
 - Matches are 2 minutes — most goals wins.
 

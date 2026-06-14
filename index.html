@@ -18,7 +18,7 @@
 </head>
 <body>
 <div id="wrap"><canvas id="game" width="900" height="600"></canvas></div>
-<div id="hint">Move: WASD/Arrows • Sprint: Shift • Pass: J • Shoot: K/Space • Switch: L</div>
+<div id="hint">Move: WASD/Arrows • Sprint: Shift • Pass: J • Shoot/Tackle: K/Space • Switch: L</div>
 <script>
 "use strict";
 
@@ -45,6 +45,10 @@ const BALL_FRICTION = 0.985, WALL_BOUNCE = 0.7;
 const POSSESS_DIST = PLAYER_RADIUS + BALL_RADIUS + 10;
 const SHOOT_POWER = 14, PASS_BASE = 0.13, PASS_MAX = 12;
 const SHOOT_RANGE = 380;
+const TACKLE_DIST = PLAYER_RADIUS + BALL_RADIUS + 10;
+const AI_TACKLE_CHANCE = 0.10;     // chance the pressing AI wins the ball on a tackle roll
+const AI_TACKLE_COOLDOWN = 18;     // frames between AI tackle rolls (global, so it can't spam)
+const HUMAN_TACKLE_CHANCE = 0.62;  // chance a well-timed manual tackle succeeds
 
 const C = {
   grassDark: "#1d7233", grassLight: "#22813b", line: "#eaeaea",
@@ -76,7 +80,7 @@ function buildTeams() {
     for (const f of FORM) {
       players.push({
         team, role: f.role, isGK: !!f.gk, fx: f.fx, fy: f.fy,
-        x: 0, y: 0, faceX: team === 0 ? 1 : -1, faceY: 0, sprinting: false,
+        x: 0, y: 0, faceX: team === 0 ? 1 : -1, faceY: 0, sprinting: false, tackleCD: 0,
       });
     }
   }
@@ -126,7 +130,9 @@ let stateTimer = 0, goalText = "", particles = [];
 let controlled = 4;                 // index into players (a blue outfielder)
 let possessor = null, kicker = null, kickLock = 0;
 let manualSwitchTimer = 0;
+let aiTackleTimer = 0;
 let pendingPass = false, pendingShoot = false, pendingSwitch = false;
+let uiHasBall = false;
 const cam = { x: 0, y: 0 };
 
 function attackGoal(team) { return team === 0 ? { x: FIELD.right, y: CY } : { x: FIELD.left, y: CY }; }
@@ -250,11 +256,15 @@ function moveToward(p, tx, ty, sprint) {
 // Possession, control switching, ball control
 // ===========================================================================
 function computePossessor() {
+  // Whoever has the ball keeps it while it's near them — it's only lost to a tackle
+  // (handled separately) or when they kick it loose. Proximity alone can't steal it.
+  if (possessor && !(kickLock > 0 && possessor === kicker) &&
+      dist(possessor.x, possessor.y, ball.x, ball.y) <= POSSESS_DIST) return possessor;
+  // Loose ball: the nearest player collects it.
   let best = null, bestD = POSSESS_DIST;
   for (const p of players) {
     if (kickLock > 0 && p === kicker) continue;
-    let d = dist(p.x, p.y, ball.x, ball.y);
-    if (p === possessor) d -= 12;   // stickiness: the carrier keeps the ball so they can dribble
+    const d = dist(p.x, p.y, ball.x, ball.y);
     if (d < bestD) { bestD = d; best = p; }
   }
   return best;
@@ -356,6 +366,43 @@ function aiPassTarget(p) {
 // Per-player AI movement
 // ===========================================================================
 let pressers = [null, null];
+
+// Role-based home: each role sits in its own band of the pitch, drifting with the
+// ball by a role-specific amount (defenders hold a line, forwards push up). Players
+// keep their own lateral lane, so the team spreads out instead of moving as a blob.
+function tacticalTarget(p, attacking) {
+  const [, ay] = baseHome(p);
+  const ballFrac = clamp((p.team === 0 ? (ball.x - FIELD.left) : (FIELD.right - ball.x)) / FIELD.width, 0, 1);
+  let depth = p.role === "DEF" ? 0.18 : p.role === "MID" ? 0.45 : 0.68;
+  depth += (ballFrac - 0.5) * (p.role === "DEF" ? 0.22 : p.role === "MID" ? 0.42 : 0.5);
+  if (attacking) depth += (p.role === "DEF" ? 0.05 : 0.13);
+  depth = clamp(depth, 0.06, 0.92);
+  const tx = FIELD.left + (p.team === 0 ? depth : 1 - depth) * FIELD.width;
+  const laneBias = p.role === "DEF" ? 0.22 : p.role === "MID" ? 0.40 : 0.32;
+  const ty = ay + (ball.y - ay) * laneBias;
+  return [tx, ty];
+}
+// Nearest opponent to mark (within range).
+function markTarget(p) {
+  let best = null, bd = 280;
+  for (const o of players) {
+    if (o.team === p.team || o.isGK) continue;
+    const d = dist(p.x, p.y, o.x, o.y);
+    if (d < bd) { bd = d; best = o; }
+  }
+  return best;
+}
+// Push apart from nearby teammates so players don't stack up.
+function separation(p) {
+  let sxv = 0, syv = 0;
+  for (const m of players) {
+    if (m === p || m.team !== p.team) continue;
+    const dx = p.x - m.x, dy = p.y - m.y, d = Math.hypot(dx, dy);
+    if (d > 0 && d < 78) { sxv += dx / d * (78 - d); syv += dy / d * (78 - d); }
+  }
+  return [sxv, syv];
+}
+
 function aiMove(p) {
   const goal = attackGoal(p.team);
   if (p.isGK) {
@@ -365,43 +412,71 @@ function aiMove(p) {
     return;
   }
   const teamHasBall = possessor && possessor.team === p.team;
-  if (possessor === p) {                          // I'm carrying the ball
-    moveToward(p, goal.x, goal.y, true);
+
+  if (possessor === p) {                           // carrying the ball
+    let dx = goal.x - p.x, dy = goal.y - p.y; const l = Math.hypot(dx, dy) || 1; dx /= l; dy /= l;
+    // Steer away from the nearest defender so the carrier shields / beats pressure.
+    let opp = null, od = Infinity;
+    for (const o of players) { if (o.team !== p.team) { const d = dist(p.x, p.y, o.x, o.y); if (d < od) { od = d; opp = o; } } }
+    if (opp && od < 72) { const ax = (p.x - opp.x) / od, ay = (p.y - opp.y) / od; dx = dx * 0.45 + ax * 0.95; dy = dy * 0.45 + ay * 0.95; }
+    moveToward(p, p.x + dx * 60, p.y + dy * 60, true);
     return;
   }
-  if (teamHasBall) {                              // support: take attacking shape
-    const [hx, hy] = homePos(p);
-    moveToward(p, hx, hy, false);
-    return;
-  }
-  if (p === pressers[p.team]) {                   // closest defender pressures the ball
+
+  let tx, ty, sprint = false;
+
+  if (p === pressers[p.team] && !teamHasBall) {     // designated presser
     if (possessor && possessor.team !== p.team) {
-      // Contain: stay goal-side of the ball and apply pressure (don't just sit on it).
-      const own = attackGoal(1 - p.team);
+      const own = attackGoal(1 - p.team);           // contain goal-side of the carrier
       const dx = own.x - ball.x, dy = own.y - ball.y, d = Math.hypot(dx, dy) || 1;
-      moveToward(p, ball.x + dx / d * 26, ball.y + dy / d * 26, true);
-    } else {
-      moveToward(p, ball.x + ball.vx * 6, ball.y + ball.vy * 6, true);  // chase the loose ball
-    }
-  } else {
-    const [hx, hy] = homePos(p);
-    moveToward(p, hx, hy, false);
+      tx = ball.x + dx / d * 22; ty = ball.y + dy / d * 22; sprint = true;
+    } else { tx = ball.x + ball.vx * 6; ty = ball.y + ball.vy * 6; sprint = true; }  // loose ball
+  } else if (!teamHasBall && p.role === "DEF") {     // defenders mark a man, goal-side
+    const mark = markTarget(p);
+    if (mark) {
+      const own = attackGoal(1 - p.team);
+      const dx = own.x - mark.x, dy = own.y - mark.y, d = Math.hypot(dx, dy) || 1;
+      tx = mark.x + dx / d * 38; ty = mark.y + dy / d * 38;
+    } else { [tx, ty] = tacticalTarget(p, false); }
+  } else {                                           // hold role position / make runs
+    [tx, ty] = tacticalTarget(p, teamHasBall);
+    if (teamHasBall && p.role !== "DEF") tx += (p.team === 0 ? 1 : -1) * (p.role === "FWD" ? 60 : 25);
   }
+
+  const [sxv, syv] = separation(p);
+  tx = clamp(tx + sxv * 0.45, FIELD.left + PLAYER_RADIUS, FIELD.right - PLAYER_RADIUS);
+  ty = clamp(ty + syv * 0.45, FIELD.top + PLAYER_RADIUS, FIELD.bottom - PLAYER_RADIUS);
+  moveToward(p, tx, ty, sprint);
+}
+
+// A tackle attempt: must be within range of the ball and off cooldown. Success steals
+// possession; a miss leaves the player briefly recovering (out of the play).
+function attemptTackle(p, baseChance) {
+  if (!possessor || possessor.team === p.team || p.tackleCD > 0) return false;
+  if (dist(p.x, p.y, ball.x, ball.y) > TACKLE_DIST) return false;
+  let chance = baseChance;
+  if (possessor.sprinting) chance -= 0.05;          // sprinting carrier is harder to dispossess
+  chance = clamp(chance, 0.02, 0.9);
+  if (Math.random() < chance) {
+    const old = possessor; possessor = p; kicker = old; kickLock = 12; p.tackleCD = 14;
+    ball.x = p.x + p.faceX * (PLAYER_RADIUS + BALL_RADIUS - 2);
+    ball.y = p.y + p.faceY * (PLAYER_RADIUS + BALL_RADIUS - 2);
+    ball.vx = 0; ball.vy = 0;
+    return true;
+  }
+  p.tackleCD = 12;                                   // mistimed — recovery time
+  return false;
 }
 
 function aiOnBall(p) {
   const goal = attackGoal(p.team);
-  const dg = dist(p.x, p.y, goal.x, goal.y);
-  if (dg < SHOOT_RANGE) { doShoot(p, goal); return; }
-  const pressured = nearestOpponentDist(p) < 55;
-  if (pressured) {
-    const mate = aiPassTarget(p);
-    if (mate) { doPass(p, mate); return; }
-  } else if (Math.random() < 0.012) {
+  if (dist(p.x, p.y, goal.x, goal.y) < SHOOT_RANGE) { doShoot(p, goal); return; }
+  // Only pass when there's space (never panic-pass straight into a defender).
+  if (nearestOpponentDist(p) > 72 && Math.random() < 0.025) {
     const mate = aiPassTarget(p);
     if (mate) { doPass(p, mate); return; }
   }
-  dribbleDir(p, goal.x - p.x, goal.y - p.y);
+  dribbleDir(p, p.faceX, p.faceY);   // carry in the direction we're running (set in aiMove)
 }
 
 // ===========================================================================
@@ -433,25 +508,44 @@ function update(now) {
       if (timeLeft <= 0) { timeLeft = 0; state = FULLTIME; }
     }
     if (kickLock > 0) kickLock--;
+    for (const p of players) if (p.tackleCD > 0) p.tackleCD--;
 
     possessor = computePossessor();
     handleControlSwitching();
     pressers[0] = teamPresser(0); pressers[1] = teamPresser(1);
+    if (pendingSwitch) cycleControlled();
 
-    // Switch button (defense)
-    if (pendingSwitch) { cycleControlled(); }
+    const [ix, iy, isprint] = readInput();
+    const humanCtrl = players[controlled];
+    uiHasBall = possessor === humanCtrl && humanCtrl.team === 0;
+    const wantTackle = !uiHasBall && pendingShoot;   // SHOOT button doubles as TACKLE when defending
 
     // Move everyone
-    const [ix, iy, isprint] = readInput();
     for (const p of players) {
-      if (p.team === 0 && p === players[controlled]) movePlayerVec(p, ix, iy, isprint);
-      else aiMove(p);
+      if (p === humanCtrl && p.team === 0) {
+        if (wantTackle) moveToward(p, ball.x, ball.y, true);  // lunge at the ball
+        else movePlayerVec(p, ix, iy, isprint);
+      } else aiMove(p);
+    }
+
+    // Resolve tackles with fresh positions
+    if (wantTackle) {
+      if (dist(humanCtrl.x, humanCtrl.y, ball.x, ball.y) > TACKLE_DIST) humanCtrl.tackleCD = Math.max(humanCtrl.tackleCD, 10);
+      else attemptTackle(humanCtrl, HUMAN_TACKLE_CHANCE);
+    }
+    if (aiTackleTimer > 0) aiTackleTimer--;
+    if (aiTackleTimer <= 0 && possessor) {           // one throttled tackle roll for the defending side
+      const p = pressers[1 - possessor.team];        // presser of the team without the ball
+      if (p && p !== humanCtrl && dist(p.x, p.y, ball.x, ball.y) <= TACKLE_DIST) {
+        attemptTackle(p, AI_TACKLE_CHANCE);
+        aiTackleTimer = AI_TACKLE_COOLDOWN;
+      }
     }
 
     // Ball control / actions
     if (possessor) {
       if (possessor === players[controlled] && possessor.team === 0) {
-        if (pendingShoot) doShoot(possessor, attackGoal(0));
+        if (uiHasBall && pendingShoot) doShoot(possessor, attackGoal(0));
         else if (pendingPass) { const t = humanPassTarget(possessor); t ? doPass(possessor, t) : dribbleDir(possessor, ix, iy); }
         else dribbleDir(possessor, ix, iy);
       } else {
@@ -590,7 +684,8 @@ function drawTouchControls() {
     ctx.fillStyle = active ? "rgba(255,220,80,0.5)" : "rgba(255,255,255,0.16)";
     ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.fill();
     ctx.strokeStyle = "rgba(255,255,255,0.5)"; ctx.lineWidth = 2; ctx.stroke();
-    text(b.label, b.x, b.y, 15, C.white);
+    const label = (key === "shoot" && !uiHasBall) ? "TACKLE" : b.label;
+    text(label, b.x, b.y, label.length > 5 ? 13 : 15, C.white);
   }
 }
 
@@ -604,7 +699,7 @@ function drawMenu() {
     "Move:   WASD or Arrow keys",
     "Sprint: hold Shift",
     "Pass:   J          Shoot: K / Space",
-    "Switch player (on defense): L",
+    "Defending: Tackle = K/Space,  Switch player = L",
     "",
     "You control the player on the ball.",
     "On touch screens, use the on-screen pad & buttons.",
