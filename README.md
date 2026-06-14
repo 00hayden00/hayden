@@ -1,55 +1,57 @@
-# Pitch Kings ⚽
+# Pitch Kings — 7-a-side ⚽
 
-A fast, arcade-style 1-on-1 soccer game built with [Pygame](https://www.pygame.org/).
-Top-down pitch, a bouncy ball with simple physics, goal celebrations, and a match
-clock. Play against a built-in AI or grab a friend for local 2-player.
+A fast, arcade-style **7-a-side soccer** game that runs in any browser — no install.
+Big scrolling pitch with a camera that follows the action, two teams of seven with
+formations, a smart-ish AI opponent, and FIFA-style controls: you always control the
+player on the ball, with passing, shooting, sprinting, and a switch-player button on
+defense.
 
-![mode: arcade soccer](https://img.shields.io/badge/mode-arcade%20soccer-yellow)
+## Play it
 
-## Run it
+It's a single self-contained file (`index.html`) — open it in any modern browser.
 
-```bash
-# 1. (optional) create a virtual environment
-python -m venv .venv
-source .venv/bin/activate        # Windows: .venv\Scripts\activate
+- **On your computer:** download `index.html` and double-click it, or open the hosted
+  link (see below).
+- **No Python or install required.**
 
-# 2. install the one dependency
-pip install -r requirements.txt
+## Controls
 
-# 3. kick off
-python main.py
-```
+| Action  | Keys                         |
+| ------- | ---------------------------- |
+| Move    | `W A S D` or Arrow keys      |
+| Sprint  | hold `Shift`                 |
+| Pass    | `J`                          |
+| Shoot   | `K` or `Space`               |
+| Switch player (on defense) | `L`           |
+| Pause   | `P`                          |
+| Start / restart | `Enter` (or tap / click) |
 
-## How to play
+On touchscreens, use the on-screen joystick (drag the left side) and the
+**SPRINT / PASS / SHOOT / SWITCH** buttons.
 
-Bump into the ball to kick it. Hold **sprint** while you make contact to smash
-it harder. Knock the ball into your opponent's goal (the netted recess) before
-the clock runs out. Most goals wins.
+## How it plays
 
-### Controls
-
-| Action | Blue (Player 1) | Red (Player 2) |
-| ------ | --------------- | -------------- |
-| Move   | `W` `A` `S` `D` | Arrow keys     |
-| Sprint | `Left Shift`    | `Right Shift`  |
-
-| Key       | Menu / Game        |
-| --------- | ------------------ |
-| `1` / `2` | Choose 1P (vs AI) / 2P |
-| `Enter`   | Start / restart    |
-| `P`       | Pause              |
-| `Esc`     | Quit               |
-
-In 1-player mode the red side is controlled by the AI.
+- You control the highlighted player (yellow ring). When your team wins the ball,
+  control **auto-switches to whoever is on the ball**.
+- On defense, tap **Switch** (`L`) to take control of a different defender.
+- Carry the ball by moving; **Pass** finds a teammate ahead of you; **Shoot** fires at
+  the open corner of the goal.
+- A **minimap** at the top shows the whole pitch so you can see off-screen players.
+- Matches are 2 minutes — most goals wins.
 
 ## Tweak it
 
-All the knobs live near the top of `main.py`:
+The knobs are grouped at the top of the `<script>` in `index.html`:
 
 - `MATCH_SECONDS` — match length
-- `PLAYER_SPEED` / `SPRINT_SPEED` — how fast players move
-- `KICK_POWER` / `SPRINT_KICK_BONUS` — how hard the ball flies
-- `BALL_FRICTION` / `WALL_BOUNCE` — ball feel
-- `GOAL_WIDTH` — how big the goals are
+- `WORLD_W` / `WORLD_H` — pitch size
+- `PLAYER_SPEED` / `SPRINT_SPEED` — movement
+- `SHOOT_POWER` / `PASS_MAX` / `SHOOT_RANGE` — attacking feel
+- `FORM` — the 7-player formation
+- `POSSESS_DIST` — how tightly players control the ball
 
-Have fun, and feel free to make it your own.
+## Also included
+
+`main.py` is an earlier **Pygame** desktop version (1-on-1). It needs Python 3 +
+`pip install -r requirements.txt`, then `python main.py`. The browser version above
+is the current, full-featured game.
