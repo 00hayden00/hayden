@@ -233,14 +233,50 @@ function readLeftInput() {
 }
 
 function aiInput(p) {
+  // Red attacks the LEFT goal and defends the RIGHT goal.
+  const attackX = FIELD.left, attackY = H / 2;
+  const ownGoalX = FIELD.right;
+
+  // Predict where the ball is heading so the AI meets it instead of chasing.
+  const lead = 8;
+  const bx = ball.x + ball.vx * lead;
+  const by = clamp(ball.y + ball.vy * lead, FIELD.top + 10, FIELD.bottom - 10);
+
+  // Defend when the ball is in our half and coming toward our goal.
+  const defending = bx > W * 0.5 && ball.vx > -0.3;
+
+  // Aim point sits inside kicking range so the AI actually makes contact.
+  const reach = PLAYER_RADIUS + BALL_RADIUS - 8;
+
   let tx, ty;
-  if (p.x < ball.x) { tx = ball.x + 40; ty = ball.y + (p.y < ball.y ? 30 : -30); }
-  else { tx = ball.x + BALL_RADIUS + PLAYER_RADIUS; ty = ball.y; }
-  if (ball.x > W * 0.7 && ball.vx > 0) { tx = (ball.x + FIELD.right) / 2; ty = ball.y; }
+  if (defending) {
+    // Sit just goal-side of the ball to block and clear it back upfield.
+    tx = Math.min(bx + reach, ownGoalX - PLAYER_RADIUS - 6);
+    ty = clamp(by, GOAL_TOP - 30, GOAL_BOTTOM + 30);
+  } else {
+    // Attack: get on the far side of the ball from the goal and drive
+    // through it so the bump sends it at the goal (never into a corner).
+    const gx = bx - attackX, gy = by - attackY;
+    const gd = Math.hypot(gx, gy) || 1;
+    tx = bx + (gx / gd) * reach;
+    ty = by + (gy / gd) * reach;
+  }
+
+  // Keep the AI on the pitch.
+  tx = clamp(tx, FIELD.left + PLAYER_RADIUS, FIELD.right - PLAYER_RADIUS);
+  ty = clamp(ty, FIELD.top + PLAYER_RADIUS, FIELD.bottom - PLAYER_RADIUS);
+
   const ddx = tx - p.x, ddy = ty - p.y;
-  const dx = Math.abs(ddx) < 4 ? 0 : Math.sign(ddx);
-  const dy = Math.abs(ddy) < 4 ? 0 : Math.sign(ddy);
-  return [dx, dy, dist(p.x, p.y, ball.x, ball.y) < 90];
+  const dz = 2;
+  const dx = Math.abs(ddx) < dz ? 0 : Math.sign(ddx);
+  const dy = Math.abs(ddy) < dz ? 0 : Math.sign(ddy);
+
+  // Sprint when it's properly lined up to strike (goal-side of the ball)
+  // or when hustling back on defense.
+  const near = dist(p.x, p.y, ball.x, ball.y) < 80;
+  const goalSide = p.x > ball.x - 6;
+  const sprint = near && (defending || goalSide);
+  return [dx, dy, sprint];
 }
 
 // ---------------------------------------------------------------------------
@@ -251,9 +287,14 @@ function resolveKick(p) {
   const d = Math.hypot(dx, dy), minD = PLAYER_RADIUS + BALL_RADIUS;
   if (d < minD && d > 0) {
     const nx = dx / d, ny = dy / d;
-    ball.x = p.x + nx * minD; ball.y = p.y + ny * minD;
-    const power = KICK_POWER + (p.sprinting ? SPRINT_KICK_BONUS : 0);
-    ball.vx = nx * power; ball.vy = ny * power;
+    ball.x = p.x + nx * minD; ball.y = p.y + ny * minD;  // separate first
+    // Only kick if the ball isn't already moving away from the player.
+    // (Stops the ball buzzing when it's pinned against a wall.)
+    const outward = ball.vx * nx + ball.vy * ny;
+    if (outward < 4) {
+      const power = KICK_POWER + (p.sprinting ? SPRINT_KICK_BONUS : 0);
+      ball.vx = nx * power; ball.vy = ny * power;
+    }
   }
 }
 function checkGoal() {
