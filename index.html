@@ -107,7 +107,8 @@ function bounceWalls() {
 // ---------------------------------------------------------------------------
 const MENU = "menu", PLAYING = "playing", PAUSED = "paused", GOAL = "goal", FULLTIME = "fulltime";
 let state = MENU, twoPlayer = false;
-let left, right, score, timeLeft, lastTick, stateTimer, goalText, particles;
+let left, right, score, timeLeft, lastTick, stateTimer, goalText;
+let particles = [];
 
 const keys = {};
 window.addEventListener("keydown", e => {
@@ -290,6 +291,9 @@ function update(now) {
   for (const p of particles) { p[0] += p[2]; p[1] += p[3]; p[3] += 0.15; p[4]--; }
   particles = particles.filter(p => p[4] > 0);
 }
+
+// Initialise match data up front so the menu has valid state to render.
+setupMatch();
 
 // ---------------------------------------------------------------------------
 // Rendering
