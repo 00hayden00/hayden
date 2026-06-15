@@ -18,7 +18,7 @@
      min-height:100%;}
   a{color:var(--accent)}
   .wrap{max-width:1080px;margin:0 auto;padding:18px 16px 64px;position:relative;z-index:1}
-  #globe{position:fixed;inset:0;width:100%;height:100%;z-index:0;pointer-events:none;opacity:.5}
+  #globe{position:fixed;inset:0;width:100%;height:100%;z-index:0;pointer-events:none;opacity:.85}
 
   /* Header */
   header{display:flex;flex-wrap:wrap;align-items:center;gap:12px;justify-content:space-between;
@@ -265,6 +265,7 @@
 <script src="sim_results.js"></script>
 <script src="live_data.js" onerror="/* optional: only present when live_update.py has run */"></script>
 <script src="odds_data.js" onerror="/* optional: only present when odds_update.py has run */"></script>
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js" onerror="/* offline: globe falls back to dots */"></script>
 <script>
 "use strict";
 /* ============================================================================
@@ -938,9 +939,10 @@ setInterval(refreshLiveData, 30000);   // auto every 30s
 renderAll();
 setTimeout(refreshLiveData, 1500);      // pull fresh data shortly after load
 
-/* ---------- spinning digital globe (tournament nations glow) ---------- */
+/* ---------- spinning digital globe with real country borders ---------- */
 (function(){
   const cv=$("#globe"); if(!cv) return; const ctx=cv.getContext("2d");
+  // [team, lat, lon, host]
   const WC=[["Mexico",23,-102,1],["South Africa",-29,24,0],["South Korea",36,128,0],["Czechia",49.8,15.5,0],
    ["Canada",56,-106,1],["Bosnia & H.",44,18,0],["Qatar",25.3,51.2,0],["Switzerland",47,8,0],
    ["Brazil",-10,-55,0],["Morocco",32,-6,0],["Haiti",19,-72,0],["Scotland",56.5,-4,0],
@@ -953,48 +955,97 @@ setTimeout(refreshLiveData, 1500);      // pull fresh data shortly after load
    ["Argentina",-34,-64,0],["Algeria",28,3,0],["Austria",47.5,14,0],["Jordan",31,36,0],
    ["Portugal",39.5,-8,0],["DR Congo",-2.9,23.6,0],["Uzbekistan",41.4,64.6,0],["Colombia",4,-72,0],
    ["England",52.5,-1.5,0],["Croatia",45.1,15.2,0],["Ghana",7.9,-1,0],["Panama",8.5,-80,0]];
-  const OTHERS=[[64,-150],[60,100],[55,37],[39,116],[28,77],[35,103],[19,-99],[-15,-47],[-34,18],
-   [1,38],[9,8],[15,32],[-6,106],[14,121],[-33,151],[45,-75],[37,-122],[40,-74],[51,0],[48,2],
-   [52,13],[41,12],[55,12],[60,11],[50,30],[30,31],[25,55],[35,51],[-23,-46],[-12,-77],[10,-66],
-   [6,3],[-26,28],[31,121],[23,90],[13,100]];
-  const TILT=-0.41; let rot=0, raf=null;
-  function resize(){ const d=Math.max(1,window.devicePixelRatio||1);
-    cv.width=innerWidth*d; cv.height=innerHeight*d; ctx.setTransform(d,0,0,d,0,0); }
-  resize(); addEventListener("resize",resize);
-  function project(latDeg,lonDeg,R,cx,cy){
-    const la=latDeg*Math.PI/180, lo=lonDeg*Math.PI/180+rot;
-    const x=Math.cos(la)*Math.sin(lo), y=Math.sin(la), z=Math.cos(la)*Math.cos(lo);
-    const y2=y*Math.cos(TILT)-z*Math.sin(TILT), z2=y*Math.sin(TILT)+z*Math.cos(TILT);
-    return {x:cx+R*x, y:cy-R*y2, z:z2};
-  }
-  function seg(aLat,aLon,bLat,bLon,R,cx,cy){
-    const p=project(aLat,aLon,R,cx,cy), q=project(bLat,bLon,R,cx,cy);
-    ctx.strokeStyle="rgba(90,170,255,"+(((p.z+q.z)/2>=0)?0.22:0.06)+")"; ctx.lineWidth=1;
-    ctx.beginPath(); ctx.moveTo(p.x,p.y); ctx.lineTo(q.x,q.y); ctx.stroke();
-  }
-  function draw(){
+  const wcLL={}; WC.forEach(c=>wcLL[c[0]]=[c[2],c[1]]);              // team -> [lon,lat]
+  const ISO3={MEX:"Mexico",ZAF:"South Africa",KOR:"South Korea",CZE:"Czechia",CAN:"Canada",
+   BIH:"Bosnia & H.",QAT:"Qatar",CHE:"Switzerland",BRA:"Brazil",MAR:"Morocco",HTI:"Haiti",USA:"USA",
+   PRY:"Paraguay",AUS:"Australia",TUR:"Türkiye",DEU:"Germany",CUW:"Curaçao",CIV:"Ivory Coast",
+   ECU:"Ecuador",NLD:"Netherlands",JPN:"Japan",SWE:"Sweden",TUN:"Tunisia",BEL:"Belgium",EGY:"Egypt",
+   IRN:"Iran",NZL:"New Zealand",ESP:"Spain",CPV:"Cape Verde",SAU:"Saudi Arabia",URY:"Uruguay",
+   FRA:"France",SEN:"Senegal",IRQ:"Iraq",NOR:"Norway",ARG:"Argentina",DZA:"Algeria",AUT:"Austria",
+   JOR:"Jordan",PRT:"Portugal",COD:"DR Congo",UZB:"Uzbekistan",COL:"Colombia",
+   GBR:["England","Scotland"],HRV:"Croatia",GHA:"Ghana",PAN:"Panama"};
+  let raf=null, rot=0, world=null, proj=null, pathGen=null, missing=[];
+
+  function setCanvas(){ const d=Math.max(1,devicePixelRatio||1); cv.width=innerWidth*d; cv.height=innerHeight*d; ctx.setTransform(d,0,0,d,0,0); }
+  function layout(){ const W=innerWidth,H=innerHeight, R=Math.min(W,H)*(W<700?0.44:0.40);
+    if(proj) proj.scale(R).translate([W<700?W*0.5:W*0.70, W<700?H*0.30:H*0.46]); }
+  addEventListener("resize",()=>{ setCanvas(); layout(); });
+
+  function statusOf(team){ const any=ALIVE.size>0; return (any?ALIVE.has(team):true)?"active":"out"; }
+  function statusISO(iso){ const t=ISO3[iso]; if(!t) return null;
+    const ts=Array.isArray(t)?t:[t]; return ts.some(x=>statusOf(x)==="active")?"active":"out"; }
+  function visible(lon,lat){ return d3.geoDistance([lon,lat],[-rot,12]) < Math.PI/2; }
+
+  function drawGlobe(){
     const W=innerWidth,H=innerHeight; ctx.clearRect(0,0,W,H);
-    const R=Math.min(W,H)*(W<700?0.42:0.34);
-    const cx=W<700?W*0.5:W*0.74, cy=W<700?H*0.30:H*0.46;
-    ctx.beginPath(); ctx.arc(cx,cy,R,0,7); ctx.strokeStyle="rgba(80,160,255,0.35)"; ctx.lineWidth=1.5; ctx.stroke();
-    for(let lon=-180;lon<180;lon+=30) for(let lat=-90;lat<90;lat+=10) seg(lat,lon,lat+10,lon,R,cx,cy);
-    for(let lat=-60;lat<=60;lat+=30) for(let lon=-180;lon<180;lon+=10) seg(lat,lon,lat,lon+10,R,cx,cy);
-    OTHERS.forEach(o=>{ const p=project(o[0],o[1],R,cx,cy); if(p.z<0) return;
-      ctx.beginPath(); ctx.arc(p.x,p.y,1.5,0,7); ctx.strokeStyle="rgba(120,160,200,0.45)"; ctx.lineWidth=1; ctx.stroke(); });
-    const anyAlive=ALIVE.size>0;
-    WC.forEach(c=>{ const p=project(c[1],c[2],R,cx,cy); if(p.z<0) return;
-      const alive=anyAlive?ALIVE.has(c[0]):true, host=c[3];
-      if(!alive){ ctx.beginPath(); ctx.arc(p.x,p.y,2,0,7); ctx.strokeStyle="rgba(150,150,160,0.5)"; ctx.lineWidth=1; ctx.stroke(); return; }
-      const col=host?"#f5c542":"#36d0ff";
-      ctx.shadowColor=col; ctx.shadowBlur=host?12:9;
-      ctx.beginPath(); ctx.arc(p.x,p.y,host?3.4:2.7,0,7); ctx.fillStyle=col; ctx.fill(); ctx.shadowBlur=0;
+    proj.rotate([rot,-12]);
+    const c=proj.translate(), R=proj.scale();
+    // ocean sphere
+    ctx.beginPath(); pathGen({type:"Sphere"});
+    const g=ctx.createRadialGradient(c[0]-R*0.35,c[1]-R*0.35,R*0.15,c[0],c[1],R);
+    g.addColorStop(0,"rgba(26,70,125,0.55)"); g.addColorStop(1,"rgba(8,22,48,0.35)");
+    ctx.fillStyle=g; ctx.fill();
+    ctx.strokeStyle="rgba(120,190,255,0.55)"; ctx.lineWidth=1.5; ctx.stroke();
+    // graticule
+    ctx.beginPath(); pathGen(d3.geoGraticule10()); ctx.strokeStyle="rgba(110,180,255,0.32)"; ctx.lineWidth=0.6; ctx.stroke();
+    // countries
+    world.features.forEach(f=>{
+      const st=statusISO(f.id);
+      ctx.beginPath(); pathGen(f);
+      if(st==="active"){ ctx.fillStyle="rgba(90,185,255,0.65)"; ctx.fill(); ctx.strokeStyle="rgba(190,230,255,0.95)"; ctx.lineWidth=0.8; ctx.stroke(); }
+      else if(st==="out"){ ctx.fillStyle="rgba(120,124,135,0.55)"; ctx.fill(); ctx.strokeStyle="rgba(170,172,182,0.6)"; ctx.lineWidth=0.6; ctx.stroke(); }
+      else{ ctx.strokeStyle="rgba(120,175,225,0.5)"; ctx.lineWidth=0.5; ctx.stroke(); }     // not in tournament: borders only
     });
-    rot+=0.0016; raf=requestAnimationFrame(draw);
+    // host accent
+    ["USA","CAN","MEX"].forEach(iso=>{ const f=world.features.find(x=>x.id===iso); if(!f) return;
+      ctx.beginPath(); pathGen(f); ctx.strokeStyle="rgba(245,197,66,0.85)"; ctx.lineWidth=1; ctx.stroke(); });
+    // WC nations missing from the map (e.g. Curaçao) -> glowing dot
+    missing.forEach(c=>{ if(!visible(c[2],c[1])) return; const p=proj([c[2],c[1]]); const alive=statusOf(c[0])==="active";
+      ctx.beginPath(); ctx.arc(p[0],p[1],3,0,7); ctx.fillStyle=alive?"#5ab9ff":"rgba(150,150,160,0.6)";
+      ctx.shadowColor="#5ab9ff"; ctx.shadowBlur=alive?9:0; ctx.fill(); ctx.shadowBlur=0; });
+    // gold line between the teams currently playing
+    const live=(LIVE_MATCHES&&LIVE_MATCHES.length)?LIVE_MATCHES[0]:(FIXTURES||[]).find(m=>m.status==="LIVE");
+    if(live && wcLL[live.home] && wcLL[live.away]){
+      ctx.beginPath(); pathGen({type:"LineString",coordinates:[wcLL[live.home],wcLL[live.away]]});
+      ctx.strokeStyle="rgba(245,197,66,0.95)"; ctx.lineWidth=2.2; ctx.shadowColor="#f5c542"; ctx.shadowBlur=12; ctx.stroke(); ctx.shadowBlur=0;
+      [live.home,live.away].forEach(t=>{ if(!visible(wcLL[t][0],wcLL[t][1])) return; const p=proj(wcLL[t]);
+        ctx.beginPath(); ctx.arc(p[0],p[1],3.6,0,7); ctx.fillStyle="#f5c542"; ctx.shadowColor="#f5c542"; ctx.shadowBlur=12; ctx.fill(); ctx.shadowBlur=0; });
+    }
+    rot+=0.12; raf=requestAnimationFrame(drawGlobe);
   }
-  draw();
-  document.addEventListener("visibilitychange",()=>{
-    if(document.hidden){ cancelAnimationFrame(raf); raf=null; } else if(!raf){ draw(); }
-  });
+
+  /* fallback dot-globe if d3 / geojson unavailable (offline) */
+  function fallbackDots(){
+    const TILT=-0.41; let r=0;
+    function pr(lat,lon,R,cx,cy){ const la=lat*Math.PI/180, lo=lon*Math.PI/180+r;
+      const x=Math.cos(la)*Math.sin(lo), y=Math.sin(la), z=Math.cos(la)*Math.cos(lo);
+      const y2=y*Math.cos(TILT)-z*Math.sin(TILT), z2=y*Math.sin(TILT)+z*Math.cos(TILT); return {x:cx+R*x,y:cy-R*y2,z:z2}; }
+    function fd(){ const W=innerWidth,H=innerHeight; ctx.clearRect(0,0,W,H);
+      const R=Math.min(W,H)*(W<700?0.42:0.38), cx=W<700?W*0.5:W*0.70, cy=W<700?H*0.30:H*0.46;
+      ctx.beginPath(); ctx.arc(cx,cy,R,0,7); ctx.strokeStyle="rgba(120,190,255,0.5)"; ctx.lineWidth=1.5; ctx.stroke();
+      for(let lon=-180;lon<180;lon+=30) for(let lat=-90;lat<90;lat+=10){ const p=pr(lat,lon,R,cx,cy),q=pr(lat+10,lon,R,cx,cy);
+        ctx.strokeStyle="rgba(110,180,255,"+((p.z+q.z)/2>=0?0.3:0.08)+")"; ctx.beginPath(); ctx.moveTo(p.x,p.y); ctx.lineTo(q.x,q.y); ctx.stroke(); }
+      WC.forEach(c=>{ const p=pr(c[1],c[2],R,cx,cy); if(p.z<0) return; const alive=ALIVE.size?ALIVE.has(c[0]):true, col=c[3]?"#f5c542":(alive?"#5ab9ff":"rgba(150,150,160,0.6)");
+        ctx.shadowColor=col; ctx.shadowBlur=alive?9:0; ctx.beginPath(); ctx.arc(p.x,p.y,alive?3:2,0,7); ctx.fillStyle=col; ctx.fill(); ctx.shadowBlur=0; });
+      r+=0.0018; raf=requestAnimationFrame(fd); }
+    setCanvas(); fd();
+  }
+
+  function start(){
+    setCanvas();
+    if(!window.d3 || !d3.geoOrthographic){ fallbackDots(); return; }
+    proj=d3.geoOrthographic().clipAngle(90).precision(0.4);
+    pathGen=d3.geoPath(proj,ctx); layout();
+    d3.json("https://cdn.jsdelivr.net/gh/johan/world.geo.json@master/countries.geo.json")
+      .then(j=>{ world=j; const covered=new Set();
+        world.features.forEach(f=>{ const t=ISO3[f.id]; if(t)(Array.isArray(t)?t:[t]).forEach(x=>covered.add(x)); });
+        missing=WC.filter(c=>!covered.has(c[0]));
+        drawGlobe(); })
+      .catch(fallbackDots);
+  }
+  start();
+  document.addEventListener("visibilitychange",()=>{ if(document.hidden){ cancelAnimationFrame(raf); raf=null; }
+    else if(!raf){ if(world) drawGlobe(); else start(); } });
 })();
 </script>
 </body>
