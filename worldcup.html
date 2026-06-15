@@ -144,8 +144,12 @@
   /* News */
   .ticker{overflow:hidden;border:1px solid var(--line);border-radius:12px;background:var(--panel2);margin-bottom:16px}
   .ticker .row{display:flex;gap:40px;white-space:nowrap;padding:10px 0;animation:scroll 38s linear infinite}
-  .ticker .row span{color:var(--muted);font-size:13px}
+  .ticker .row span{color:var(--muted);font-size:13px;display:inline-flex;align-items:center;gap:6px}
   .ticker .row b{color:var(--accent)}
+  .scoreticker{margin-top:12px;margin-bottom:0;border-color:#23332a;background:linear-gradient(90deg,#0e1a13,#0b0f0c)}
+  .scoreticker .row{animation-duration:55s}
+  .scoreticker .row b{color:var(--txt);font-variant-numeric:tabular-nums}
+  .scoreticker:hover .row{animation-play-state:paused}
   @keyframes scroll{from{transform:translateX(0)}to{transform:translateX(-50%)}}
   .news{border:1px solid var(--line);border-radius:14px;background:var(--panel);padding:13px 16px;margin-bottom:10px}
   .news .h{font-weight:700;font-size:14.5px;margin-bottom:4px}
@@ -171,6 +175,8 @@
       <div class="sub">Data: <span id="asof">snapshot</span> <button id="refreshBtn" class="refresh" title="Fetch latest now">🔄 Refresh</button></div>
     </div>
   </header>
+
+  <div class="ticker scoreticker" id="scoreTicker" style="display:none"><div class="row" id="scoreTickRow"></div></div>
 
   <div class="warn" id="warnBanner">
     <span>🎲</span>
@@ -435,14 +441,34 @@ function buildData(){
 buildData();
 
 const NEWS = [
-  ["⚽","Germany demolish Curaçao 7–1 in record opener","Musiala back from injury and starting; Havertz bagged a brace. The smallest nation ever to qualify was overwhelmed. Germany look every bit a semifinal threat.","Group E · Jun 14"],
-  ["🇺🇸","USA roar past Paraguay 4–1 in host opener","Balogun's brace made him the first American with 2+ goals in a single World Cup match since Bert Patenaude in 1930. Hosts off to a flier.","Group D · Jun 12"],
-  ["😱","Australia stun Türkiye 2–0","An early upset — Türkiye's title odds drifted from ~90-1 toward 110-1. Group D is suddenly a host-vs-Socceroos race.","Group D · Jun 13"],
-  ["🇧🇷","Brazil held 1–1 by Morocco","Without the injured Rodrygo (knee, out since March) and with Neymar short of form, Vinícius must carry the load. Morocco shortened to ~35-1.","Group C · Jun 13"],
-  ["🇳🇱","Dutch dented: Timber & Xavi Simons OUT","Netherlands drew Japan 2–2 already missing Jurrien Timber and Xavi Simons (ACL). Their deep-run ceiling has dropped — now a R16/QF exit on our board.","Group F · Jun 14"],
-  ["🇪🇸","Yamal cleared to feature for favourites Spain","After an April hamstring scare, Lamine Yamal is set to play from the opener. The biggest doubt over the +450 favourites is lifted.","Group H · Jun 15"],
-  ["🇫🇷","Mbappé fit as France co-favourites","Kylian Mbappé declared fit. France (+450/+475) sit level with Spain atop every book's title market.","Group I · Jun 16"],
-  ["🇳🇴","Haaland's Norway land in 'group of death'","16 goals in qualifying. Norway must navigate France and Senegal in Group I — the toughest quartet in the draw.","Group I · Jun 16"],
+  {d:"2026-06-15", when:"Jun 15", team:"Spain", title:"Yamal cleared to feature for favourites Spain",
+   body:"After an April hamstring scare, Lamine Yamal is set to play. The biggest doubt over the +450 title favourites is lifted; De la Fuente confirmed he's available against Cape Verde.", tag:"Group H"},
+  {d:"2026-06-15", emoji:"🌎", title:"Biggest World Cup ever hits full stride",
+   body:"The first 48-team, three-host edition spans 104 matches across 16 venues in the USA, Canada and Mexico — with eight third-placed teams advancing from the group stage for the first time.", tag:"Tournament"},
+  {d:"2026-06-15", emoji:"👟", title:"Golden Boot race wide open",
+   body:"With group play underway the simulated top-scorer market is led by Mbappé, with Haaland, Kane, Gyökeres and Yamal all in the mix — anyone on a deep-running side can surge.", tag:"Golden Boot"},
+  {d:"2026-06-14", team:"Germany", title:"Germany demolish Curaçao 7–1 in record rout",
+   body:"Musiala, back from injury and starting, pulled the strings; Havertz bagged a brace. The smallest nation ever to qualify was overwhelmed — Germany look every bit a semifinal threat.", tag:"Group E"},
+  {d:"2026-06-14", team:"Sweden", title:"Gyökeres & Isak fire Sweden past Tunisia 5–1",
+   body:"A statement attacking display: the Gyökeres–Isak pairing ran riot, vaulting Sweden into contention to escape Group F and lifting Gyökeres up the Golden Boot board.", tag:"Group F"},
+  {d:"2026-06-14", team:"Netherlands", title:"Dutch dented: Timber & Xavi Simons ruled out",
+   body:"The Netherlands drew Japan 2–2 already missing Jurrien Timber and Xavi Simons (ACL). With their spine thinned, their deep-run ceiling has dropped to a R16/QF exit on our model.", tag:"Group F"},
+  {d:"2026-06-13", team:"Brazil", title:"Brazil held 1–1 by a stubborn Morocco",
+   body:"Without the injured Rodrygo (knee) and with Neymar short of match sharpness, Vinícius had to carry the load. Morocco shortened to ~35-1 after an organised, dangerous display.", tag:"Group C"},
+  {d:"2026-06-13", team:"Australia", title:"Socceroos stun Türkiye 2–0",
+   body:"One of the early upsets: Australia's pressing and set-piece threat undid Türkiye, whose title odds drifted from ~90-1 toward 110-1. Group D is suddenly a host-vs-Socceroos race.", tag:"Group D"},
+  {d:"2026-06-13", team:"Scotland", title:"Scotland edge Haiti 1–0",
+   body:"A scrappy but vital win — McTominay's side ground out three points against a spirited Haiti debutant outfit, putting early pressure on Brazil and Morocco.", tag:"Group C"},
+  {d:"2026-06-12", team:"USA", title:"USA roar past Paraguay 4–1 in host opener",
+   body:"Balogun's brace made him the first American with 2+ goals in a single World Cup match since Bert Patenaude in 1930. The co-hosts could not have asked for a better start.", tag:"Group D"},
+  {d:"2026-06-11", team:"Mexico", title:"Mexico open the tournament at the Estadio Azteca",
+   body:"Julián Quiñones' 9th-minute strike was the first goal of the 2026 World Cup as Mexico beat South Africa 2–0 before a roaring Mexico City crowd in the historic opener.", tag:"Group A"},
+  {d:"2026-06-11", team:"South Korea", title:"South Korea fight back to beat Czechia 2–1",
+   body:"Son Heung-min's side recovered from going behind, with Hwang and Oh Hyeon-gyu turning the game — an early signal that the Asian sides arrived in form.", tag:"Group A"},
+  {d:"2026-06-10", emoji:"🐐", title:"Messi & Ronaldo headline a record sixth World Cup",
+   body:"Lionel Messi and Cristiano Ronaldo become the first men to appear at six different World Cups — a likely last dance for two of the game's greatest, on the biggest stage yet.", tag:"Feature"},
+  {d:"2026-06-09", emoji:"🏟️", title:"Heat and travel loom as summer storylines",
+   body:"With kickoffs spread across North American time zones and midday slots in warm host cities, squad rotation, hydration breaks and long internal flights could shape who lasts the distance.", tag:"Tournament"},
 ];
 </script>
 
@@ -745,11 +771,29 @@ function renderValue(){
   $("#valList").innerHTML = h;
 }
 
+function newsIcon(n){ return n.team ? fl(n.team) : `<span class="em">${n.emoji||"📰"}</span>`; }
 function renderNews(){
-  $("#tickRow").innerHTML = (NEWS.concat(NEWS)).map(n=>`<span>${n[0]} <b>${n[1]}</b></span>`).join("");
-  $("#newsList").innerHTML = NEWS.map(n=>`<div class="news">
-    <div class="h"><span class="em">${n[0]}</span>${n[1]}</div>
-    <div class="body">${n[2]}</div><div class="meta">${n[3]}</div></div>`).join("");
+  const items = NEWS.slice().sort((a,b)=> (a.d<b.d?1:a.d>b.d?-1:0));   // most recent first
+  $("#tickRow").innerHTML = items.concat(items).map(n=>`<span>${newsIcon(n)} <b>${n.title}</b></span>`).join("");
+  $("#newsList").innerHTML = items.map(n=>`<div class="news">
+    <div class="h">${newsIcon(n)} ${n.title}</div>
+    <div class="body">${n.body}</div><div class="meta">${n.tag} · ${n.when||n.d}</div></div>`).join("");
+}
+
+function renderScoreTicker(){
+  const games = FIXTURES.filter(m=>m.status==="FT"||m.status==="LIVE")
+                        .sort((a,b)=>kickMs(b)-kickMs(a)).slice(0,24);
+  const el=$("#scoreTicker"), row=$("#scoreTickRow");
+  if(!games.length){ el.style.display="none"; return; }
+  const item = m => {
+    const live = m.status==="LIVE";
+    return `<span>${live?'<span class="live-dot"></span>':''}${fl(m.home)} ${m.home} `
+         + `<b>${m.hs}–${m.as}</b> ${m.away} ${fl(m.away)}`
+         + `${live?' <span style="color:var(--red);font-size:10px">LIVE</span>':''}</span>`;
+  };
+  const html = games.map(item).join("");
+  row.innerHTML = html + html;     // duplicated for a seamless loop
+  el.style.display="block";
 }
 
 /* tabs */
@@ -786,6 +830,7 @@ function renderFooter(){
 }
 
 function renderAll(){
+  renderScoreTicker();
   renderPred();renderScores();renderStandings();renderBracket();renderBoot();renderValue();renderNews();
   updateHeader();renderFooter();
 }
