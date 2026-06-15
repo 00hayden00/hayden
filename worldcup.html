@@ -86,6 +86,14 @@
   .verdict{grid-column:1/-1;margin-top:6px;font-size:11.5px;color:var(--muted);display:flex;flex-wrap:wrap;gap:6px;align-items:center}
   .scchip{background:#13251a;border:1px solid var(--line);border-radius:8px;padding:2px 8px;font-size:11.5px;color:#cdd8d0}
   .scchip b{color:var(--accent)}
+  .split{grid-column:1/-1;margin-top:8px}
+  .splithead{font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:5px}
+  .splitbar{display:flex;height:14px;border-radius:7px;overflow:hidden;background:#0d130f}
+  .splitbar > span{display:block;transition:width .4s}
+  .splitlabels{display:flex;justify-content:space-between;gap:10px;margin-top:6px;flex-wrap:wrap}
+  .splitlabels > span{display:flex;align-items:center;gap:6px;font-size:12px;color:#cdd8d0}
+  .splitlabels i{width:9px;height:9px;border-radius:2px;display:inline-block}
+  .splitlabels b{color:#fff}
   .badge{font-size:10px;font-weight:800;padding:2px 7px;border-radius:6px}
   .b-lock{background:#0c3; color:#04130a}
   .b-lean{background:#274b34;color:#cdebd6}
@@ -361,7 +369,7 @@ function buildData(){
     FIXTURES = SIM.played.map(m=>({date:m.date,group:m.group,home:m.home,away:m.away,
                 status:"FT",hs:m.hs,as:m["as"]}))
       .concat(SIM.games.map(m=>({date:m.date,group:m.group,home:m.home,away:m.away,status:m.status,
-                pick:m.pick,ps:m.ps,conf:m.conf,scorers:m.scorers,
+                pick:m.pick,ps:m.ps,conf:m.conf,scorers:m.scorers,xgH:m.xgH,xgA:m.xgA,
                 pHome:m.pHome,pDraw:m.pDraw,pAway:m.pAway})));
     STANDINGS = {};
     Object.keys(SIM.standings).sort().forEach(g=>{
@@ -434,6 +442,26 @@ const confTier  = c => c>=80?"lock":c>=55?"lean":"coin";
 
 function teamHTML(t,side){return `<div class="team ${side}">${side==='away'?'':fl(t)}<span class="nm">${t}</span>${side==='away'?fl(t):''}</div>`;}
 
+// Win/draw/away probabilities for a match. For LIVE games with a known minute and
+// expected-goals, recompute from the CURRENT score (real-time). Otherwise use the
+// pre-match simulation split.
+function poisPmf(k,l){ let p=Math.exp(-l); for(let i=1;i<=k;i++) p*=l/i; return p; }
+function probsFor(m){
+  const live = m.status==="LIVE";
+  if(live && m.minute!=null && m.xgH!=null){
+    const rem = Math.max(0,(94-m.minute))/94;          // fraction of match left
+    const lh=m.xgH*rem, la=m.xgA*rem, cH=m.hs||0, cA=m.as||0;
+    let ph=0,pd=0,pa=0;
+    for(let i=0;i<=8;i++) for(let j=0;j<=8;j++){
+      const p=poisPmf(i,lh)*poisPmf(j,la), H=cH+i, A=cA+j;
+      if(H>A) ph+=p; else if(A>H) pa+=p; else pd+=p;
+    }
+    const s=ph+pd+pa||1;
+    return {ph:ph/s,pd:pd/s,pa:pa/s,live:true};
+  }
+  return {ph:m.pHome,pd:m.pDraw,pa:m.pAway,live:false};
+}
+
 function pickText(m){
   if(m.pick==="draw") return `Draw`;
   const w = m.pick==="home"?m.home:m.away;
@@ -442,7 +470,8 @@ function pickText(m){
 
 function matchCard(m,showPred){
   const live = m.status==="LIVE";
-  const hasScore = m.status==="FT" || live;
+  const finished = m.status==="FT";
+  const hasScore = finished || live;
   const stCls = m.status==="FT"?"st-ft":(m.status==="TODAY"||live)?"st-live":"st-up";
   const stTxt = m.status==="FT"?"Full time"
               : live?`<span class="live-dot"></span>LIVE${m.minute?" "+m.minute+"'":""}`
@@ -451,14 +480,12 @@ function matchCard(m,showPred){
     ? `<div class="score">${m.hs}–${m.as}</div>`
     : `<div class="vs">VS</div>`;
   let pred="";
-  if(showPred && !hasScore){
+  if(showPred && !finished && m.pick){
     const [bc,bl]=confBadge(m.conf);
     pred = `<div class="pred">
-        <span class="lab">Sim pick</span>
+        <span class="lab">${live?"Pre-match call":"Sim pick"}</span>
         <span class="pick">${pickText(m)}</span>
         <span class="badge ${bc}">${bl}</span>
-        <div class="confbar"><i style="width:${m.conf}%;background:var(--${confClass(m.conf)})"></i></div>
-        <span class="confpct" style="color:var(--${confClass(m.conf)})">${m.conf}%</span>
       </div>`;
     if(m.scorers && m.scorers.length){
       const chips = m.scorers.slice(0,4).map(s=>
@@ -466,8 +493,22 @@ function matchCard(m,showPred){
       pred += `<div class="verdict"><span class="lab">Likely scorers</span> ${chips}</div>`;
     }
     if(m.pHome!=null){
-      pred += `<div class="verdict">Sim outcome split — `
-        + `${m.home} ${Math.round(m.pHome*100)}% · Draw ${Math.round(m.pDraw*100)}% · ${m.away} ${Math.round(m.pAway*100)}%</div>`;
+      const p=probsFor(m), ph=Math.round(p.ph*100), pd=Math.round(p.pd*100), pa=Math.round(p.pa*100);
+      pred += `<div class="split">
+        <div class="splithead">${p.live
+            ? `<span style="color:var(--red)"><span class="live-dot"></span>LIVE win probability${m.minute?" · "+m.minute+"'":" (from current score)"}</span>`
+            : "Projected outcome (simulations)"}</div>
+        <div class="splitbar">
+          <span style="width:${p.ph*100}%;background:var(--green)"></span>
+          <span style="width:${p.pd*100}%;background:#5b6b60"></span>
+          <span style="width:${p.pa*100}%;background:#3a86c8"></span>
+        </div>
+        <div class="splitlabels">
+          <span><i style="background:var(--green)"></i>${fl(m.home)} ${m.home} <b>${ph}%</b></span>
+          <span><i style="background:#5b6b60"></i>Draw <b>${pd}%</b></span>
+          <span><i style="background:#3a86c8"></i>${fl(m.away)} ${m.away} <b>${pa}%</b></span>
+        </div>
+      </div>`;
     }
   }
   return `<div class="match">

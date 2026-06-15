@@ -242,8 +242,10 @@ for date, g, home, away in REMAINING:
     (mh,ma),_ = scores[bucket].most_common(1)[0]
     top = goals_for.most_common(6)
     scorers = [{"team":tm,"name":nm,"pct":round(100*c/n)} for (tm,nm),c in top]
+    hx, ax = expected_goals(home, away)        # for the dashboard's in-play model
     game_results.append({
         "date":date,"group":g,"home":home,"away":away,"status":"SCHED",
+        "xgH":round(hx,2),"xgA":round(ax,2),
         "pHome":round(pH,3),"pDraw":round(pD,3),"pAway":round(pA,3),
         "pick":pick,"conf":conf,"ps":f"{mh}–{ma}","scorers":scorers,
     })
