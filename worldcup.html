@@ -49,9 +49,21 @@
     background:linear-gradient(90deg,#0f2a1c,#0b1510);padding:11px 16px;animation:fade .3s}
   .updbanner .uh{display:flex;align-items:center;gap:8px;font-weight:800;color:var(--accent);font-size:13.5px}
   .updbanner .uh .x{margin-left:auto;cursor:pointer;background:none;border:none;color:var(--muted);font-size:16px}
-  .updbanner ul{margin:8px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:4px}
+  .updbanner ul{margin:8px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:5px}
   .updbanner li{font-size:12.5px;color:#dbe6de}
   .updbanner.flash{box-shadow:0 0 0 3px rgba(52,209,122,.35);transition:box-shadow 1.2s}
+  .updbanner .tally{font-weight:800;font-size:12px;margin-left:4px}
+  .updbanner .tally.up{color:var(--green)} .updbanner .tally.down{color:var(--red)}
+  .chg{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .chg.note b{color:#fff}
+  .chg-lbl{flex:0 0 auto;min-width:140px;display:flex;align-items:center;gap:4px}
+  .mtag{font-size:9px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);border:1px solid var(--line);border-radius:5px;padding:0 5px}
+  .chg-val{color:var(--muted);min-width:96px;font-variant-numeric:tabular-nums}
+  .chg-bar{position:relative;width:90px;height:9px;background:#10211a;border:1px solid var(--line);border-radius:5px;flex:0 0 auto;overflow:hidden}
+  .chg-bar .mid{position:absolute;left:50%;top:0;bottom:0;width:1px;background:#46584d}
+  .chg-bar i{position:absolute;top:1px;bottom:1px;border-radius:2px}
+  .chg-d{font-weight:800;font-variant-numeric:tabular-nums;min-width:50px}
+  .chg-d.up{color:var(--green)} .chg-d.down{color:var(--red)}
 
   /* Tabs */
   nav.tabs{display:flex;gap:6px;flex-wrap:wrap;margin:18px 0 10px}
@@ -848,34 +860,45 @@ function snapshotState(){
   return {results, title, qual, golden:(GOLDEN&&GOLDEN[0])?GOLDEN[0][0]:null};
 }
 function diffState(a,b){
-  const ch=[];
-  for(const k in b.results){                       // new or corrected final scores
-    if(a.results[k]!==b.results[k]){
-      const p=k.split("|");
-      ch.push({i:"✅",t:`${p[1]} ${b.results[k].replace("-","–")} ${p[2]} — full time`});
-    }
+  const results=[], metrics=[], notes=[];
+  for(const k in b.results){                        // new or corrected final scores
+    if(a.results[k]!==b.results[k]){ const p=k.split("|");
+      results.push({kind:"result", h:p[1], a:p[2], score:b.results[k].replace("-","–")}); }
   }
-  const mv=[];                                      // title-odds movers
-  for(const t in b.title){ const o=a.title[t]; if(o!=null && Math.abs(b.title[t]-o)>=0.4) mv.push({t,o,n:b.title[t]}); }
-  mv.sort((x,y)=>Math.abs(y.n-y.o)-Math.abs(x.n-x.o));
-  mv.slice(0,4).forEach(m=>ch.push({i:m.n>m.o?"📈":"📉",t:`${m.t} title odds ${m.o.toFixed(1)}% → ${m.n.toFixed(1)}%`}));
-  const qv=[];                                      // qualification swings
-  for(const t in b.qual){ const o=a.qual[t]; if(o!=null && Math.abs(b.qual[t]-o)>=4) qv.push({t,o,n:b.qual[t]}); }
-  qv.sort((x,y)=>Math.abs(y.n-y.o)-Math.abs(x.n-x.o));
-  qv.slice(0,3).forEach(m=>ch.push({i:m.n>m.o?"🔼":"🔽",t:`${m.t} qualify ${m.o}% → ${m.n}%`}));
-  if(a.golden && b.golden && a.golden!==b.golden) ch.push({i:"👟",t:`New Golden Boot leader: ${b.golden}`});
-  return ch;
+  for(const t in b.title){ const o=a.title[t]; if(o!=null && Math.abs(b.title[t]-o)>=0.4)
+      metrics.push({kind:"metric", team:t, metric:"title", old:o, new:b.title[t]}); }
+  for(const t in b.qual){ const o=a.qual[t]; if(o!=null && Math.abs(b.qual[t]-o)>=4)
+      metrics.push({kind:"metric", team:t, metric:"qualify", old:o, new:b.qual[t]}); }
+  metrics.sort((x,y)=>Math.abs(y.new-y.old)-Math.abs(x.new-x.old));
+  if(a.golden && b.golden && a.golden!==b.golden) notes.push({kind:"note", icon:"👟", text:`New Golden Boot leader: ${b.golden}`});
+  return results.concat(metrics.slice(0,6), notes);
 }
 let bannerTimer=null;
 function showUpdateBanner(changes){
   const el=$("#updateBanner");
+  const metrics=changes.filter(c=>c.kind==="metric");
+  const maxAbs=Math.max(0.5, ...metrics.map(c=>Math.abs(c.new-c.old)));
+  const ups=metrics.filter(c=>c.new>c.old).length, downs=metrics.filter(c=>c.new<c.old).length;
+  const fmt=v=>Number.isInteger(v)?String(v):v.toFixed(1);
+  const row=c=>{
+    if(c.kind==="result") return `<li class="chg note">✅ ${fl(c.h)} ${c.h} <b>${c.score}</b> ${c.a} ${fl(c.a)} — full time</li>`;
+    if(c.kind==="note")   return `<li class="chg note">${c.icon} ${c.text}</li>`;
+    const d=c.new-c.old, up=d>0, w=Math.round(50*Math.abs(d)/maxAbs);
+    return `<li class="chg">
+      <span class="chg-lbl">${fl(c.team)} ${c.team} <span class="mtag">${c.metric}</span></span>
+      <span class="chg-val">${fmt(c.old)}% → ${fmt(c.new)}%</span>
+      <span class="chg-bar"><span class="mid"></span><i style="${up?'left:50%':'right:50%'};width:${w}%;background:var(--${up?'green':'red'})"></i></span>
+      <span class="chg-d ${up?'up':'down'}">${up?'▲':'▼'} ${up?'+':'−'}${fmt(Math.abs(d))}</span>
+    </li>`;
+  };
   el.innerHTML=`<div class="uh">⚡ Predictions updated
       <span style="color:var(--muted);font-weight:400">· ${new Date().toLocaleTimeString()}</span>
+      ${metrics.length?`<span class="tally up">▲ ${ups}</span><span class="tally down">▼ ${downs}</span>`:""}
       <button class="x" onclick="this.closest('.updbanner').style.display='none'">✕</button></div>
-    <ul>${changes.slice(0,8).map(c=>`<li>${c.i} ${c.t}</li>`).join("")}</ul>`;
+    <ul>${changes.slice(0,9).map(row).join("")}</ul>`;
   el.style.display="block";
   el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash");
-  clearTimeout(bannerTimer); bannerTimer=setTimeout(()=>{ el.style.display="none"; }, 20000);
+  clearTimeout(bannerTimer); bannerTimer=setTimeout(()=>{ el.style.display="none"; }, 22000);
 }
 
 /* live polling — re-pull sim_results.js + live_data.js when served over http(s) */
