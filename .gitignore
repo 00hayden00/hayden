@@ -8,6 +8,7 @@ venv/
 live_data.js
 results_override.json
 sim_results.js
+odds_data.js
 
 # saved API key (keep secrets out of git)
 apikey.txt

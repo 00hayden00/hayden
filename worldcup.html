@@ -186,6 +186,7 @@
     <div class="tab" data-tab="standings">🏆 Standings</div>
     <div class="tab" data-tab="bracket">🗺️ Bracket</div>
     <div class="tab" data-tab="boot">👟 Golden Boot</div>
+    <div class="tab" data-tab="value">💰 Value</div>
     <div class="tab" data-tab="news">📰 News</div>
   </nav>
 
@@ -217,6 +218,15 @@
   <!-- BRACKET -->
   <section id="bracket"><div id="brk"></div></section>
 
+  <!-- VALUE -->
+  <section id="value">
+    <div class="warn" style="margin-top:0">
+      <span>🧠</span>
+      <div><b>Read this first.</b> FanDuel's traders are sharper than this toy model. A positive "edge" here is far more likely to mean <b>the model is wrong</b> than that FanDuel mispriced a game. This tab is for curiosity — seeing where the simulation diverges from the market — <b>not</b> a betting signal. Don't bet money you can't lose. Help: 1-800-GAMBLER.</div>
+    </div>
+    <div id="valList"></div>
+  </section>
+
   <!-- GOLDEN BOOT -->
   <section id="boot">
     <div class="filters"><span class="hint">Top scorer race — expected goals & chance of winning the Golden Boot, aggregated across every simulated tournament (players on teams that go deep score more).</span></div>
@@ -234,6 +244,7 @@
 
 <script src="sim_results.js"></script>
 <script src="live_data.js" onerror="/* optional: only present when live_update.py has run */"></script>
+<script src="odds_data.js" onerror="/* optional: only present when odds_update.py has run */"></script>
 <script>
 "use strict";
 /* ============================================================================
@@ -669,6 +680,71 @@ function renderBoot(){
   $("#bootList").innerHTML=h;
 }
 
+function amer(d){ return d>=2 ? "+"+Math.round((d-1)*100) : "−"+Math.round(100/(d-1)); }
+function normName(s){ return (s||"").normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase(); }
+function evColor(ev){ return ev>=0.05?"var(--green)":ev>=0?"var(--lime)":"var(--muted)"; }
+
+function renderValue(){
+  const O = window.ODDS;
+  if(!O || !O.matches || !O.matches.length){
+    $("#valList").innerHTML = `<div class="hint" style="padding:20px">No FanDuel odds loaded. Run <code>odds_update.py</code> (needs a free the-odds-api.com key) to populate this tab. Then it compares those lines to the model.</div>`;
+    return;
+  }
+  // ----- match-winner value -----
+  const rows=[];
+  O.matches.forEach(om=>{
+    const f = FIXTURES.find(x=>x.home===om.home && x.away===om.away && x.status!=="FT");
+    if(!f || f.pHome==null) return;
+    const dec={H:om.h2h.H,D:om.h2h.D,A:om.h2h.A};
+    const raw={H:1/dec.H,D:1/dec.D,A:1/dec.A}, tot=raw.H+raw.D+raw.A;
+    const model={H:f.pHome,D:f.pDraw,A:f.pAway};
+    [["H",om.home],["D","Draw"],["A",om.away]].forEach(([k,lab])=>{
+      rows.push({home:om.home,away:om.away,bet:lab,dec:dec[k],
+        model:model[k], fair:raw[k]/tot, edge:model[k]-raw[k]/tot, ev:model[k]*dec[k]-1});
+    });
+  });
+  rows.sort((a,b)=>b.ev-a.ev);
+  let h = `<div class="hint" style="margin:4px 0 8px">Match-winner odds — <b>${O.book}</b> · updated ${O.updated}. Sorted by the model's expected value (EV). Remember: positive EV almost certainly = model error.</div>
+    <div class="gcard"><table><thead><tr><th>Match</th><th>Bet</th><th>${O.book}</th><th>Model</th><th>Mkt</th><th>Edge</th><th>EV</th></tr></thead><tbody>`;
+  rows.slice(0,20).forEach(r=>{
+    h += `<tr><td class="tn" style="font-size:12px">${fl(r.home)} ${r.home}<br>${fl(r.away)} ${r.away}</td>
+      <td>${r.bet==="Draw"?"Draw":(r.bet===r.home?fl(r.home):fl(r.away))+" "+r.bet}</td>
+      <td><b>${amer(r.dec)}</b><br><span class="hint">${r.dec.toFixed(2)}</span></td>
+      <td>${Math.round(r.model*100)}%</td>
+      <td style="color:var(--muted)">${Math.round(r.fair*100)}%</td>
+      <td style="color:${r.edge>=0?'var(--lime)':'var(--muted)'}">${r.edge>=0?'+':''}${Math.round(r.edge*100)}pp</td>
+      <td><b style="color:${evColor(r.ev)}">${r.ev>=0?'+':''}${Math.round(r.ev*100)}%</b></td></tr>`;
+  });
+  h += `</tbody></table></div>`;
+
+  // ----- goalscorer value (best-effort name match to model scorers) -----
+  if(O.scorers && O.scorers.length){
+    const srows=[];
+    O.scorers.forEach(os=>{
+      const f = FIXTURES.find(x=>x.home===os.home && x.away===os.away);
+      let modelP=null;
+      if(f && f.scorers){
+        const bn=normName(os.name);
+        const hit=f.scorers.find(s=>{ const mn=normName(s.name).split(" ").pop(); return mn && bn.includes(mn); });
+        if(hit) modelP=hit.pct/100;
+      }
+      srows.push({game:`${os.home} v ${os.away}`, name:os.name, dec:os.price,
+        modelP, ev: modelP!=null ? modelP*os.price-1 : null});
+    });
+    srows.sort((a,b)=>(b.ev??-9)-(a.ev??-9));
+    h += `<div class="hint" style="margin:14px 0 8px">Anytime goalscorer — <b>${O.book}</b>. Model % = chance that player scores in that game (only shown where names match).</div>
+      <div class="gcard"><table><thead><tr><th>Player</th><th>Game</th><th>${O.book}</th><th>Model</th><th>EV</th></tr></thead><tbody>`;
+    srows.slice(0,20).forEach(r=>{
+      h += `<tr><td class="tn">${r.name}</td><td class="hint" style="font-size:11px">${r.game}</td>
+        <td><b>${amer(r.dec)}</b></td>
+        <td>${r.modelP!=null?Math.round(r.modelP*100)+'%':'—'}</td>
+        <td>${r.ev!=null?`<b style="color:${evColor(r.ev)}">${r.ev>=0?'+':''}${Math.round(r.ev*100)}%</b>`:'—'}</td></tr>`;
+    });
+    h += `</tbody></table></div>`;
+  }
+  $("#valList").innerHTML = h;
+}
+
 function renderNews(){
   $("#tickRow").innerHTML = (NEWS.concat(NEWS)).map(n=>`<span>${n[0]} <b>${n[1]}</b></span>`).join("");
   $("#newsList").innerHTML = NEWS.map(n=>`<div class="news">
@@ -710,7 +786,7 @@ function renderFooter(){
 }
 
 function renderAll(){
-  renderPred();renderScores();renderStandings();renderBracket();renderBoot();renderNews();
+  renderPred();renderScores();renderStandings();renderBracket();renderBoot();renderValue();renderNews();
   updateHeader();renderFooter();
 }
 
@@ -770,6 +846,7 @@ function refreshLiveData(){
   return Promise.allSettled([
     fetch("sim_results.js"+bust).then(r=>r.ok?r.text():Promise.reject()),
     fetch("live_data.js"+bust).then(r=>r.ok?r.text():Promise.reject()),
+    fetch("odds_data.js"+bust).then(r=>r.ok?r.text():Promise.reject()),
   ]).then(res=>{
     let changed=false;
     res.forEach(p=>{ if(p.status==="fulfilled"){ try{ (0,eval)(p.value); changed=true; }catch(e){} }});

@@ -77,6 +77,12 @@ A self-contained **Monte Carlo** predictor for the 2026 World Cup, just for fun.
 - `live_update.py` — pulls **real** match data from a football API, overlays live
   scores/minutes on the dashboard, and re-runs the simulation so predictions track
   reality.
+- `odds_update.py` — pulls **real FanDuel odds** from the-odds-api.com (free key)
+  and writes `odds_data.js`; the dashboard's **Value** tab compares them to the
+  model to show edges/EV. Run `python3 odds_update.py` (add `--props` for
+  anytime-goalscorer odds — costs one request per game). **Note:** a positive
+  "edge" almost always means the model is wrong, not that FanDuel mispriced a
+  game. It's a curiosity, not a betting signal.
 
 ### How to open the dashboard
 
