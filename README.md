@@ -59,3 +59,21 @@ The knobs are grouped at the top of the `<script>` in `index.html`:
 `main.py` is an earlier **Pygame** desktop version (1-on-1). It needs Python 3 +
 `pip install -r requirements.txt`, then `python main.py`. The browser version above
 is the current, full-featured game.
+
+## World Cup '26 predictor dashboard
+
+A self-contained **Monte Carlo** predictor for the 2026 World Cup, just for fun.
+
+- `simulate_worldcup.py` — pure-Python (stdlib only) simulation engine. Each match
+  uses Elo-style power ratings (seeded from bookmaker title odds + FIFA/Elo +
+  early results) → Poisson goals, with every goal attributed to a scorer by squad
+  scoring-share. Already-played games are held to their real scores; only the
+  remaining games are simulated. Runs thousands of sims per game plus thousands of
+  full-tournament runs, then writes `sim_results.js`.
+  Run it with `python3 simulate_worldcup.py`.
+- `worldcup.html` — a live-style dashboard (open in any browser) that reads
+  `sim_results.js`: latest scores, news, per-game picks with **confidence + likely
+  scorers**, qualification odds per group, and a Monte Carlo title race.
+
+> ⚠️ Predictions are for entertainment only — a model cannot make uncertain events
+> certain. Never bet money you can't afford to lose. Help: **1-800-GAMBLER**.
