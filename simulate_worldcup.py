@@ -114,9 +114,10 @@ PLAYED = [  # date, group, home, away, hs, as
  ("Sat Jun 13","D","Australia","Türkiye",2,0),
  ("Sun Jun 14","E","Germany","Curaçao",7,1),
  ("Sun Jun 14","F","Netherlands","Japan",2,2),
+ ("Sun Jun 14","E","Ivory Coast","Ecuador",1,0),
+ ("Sun Jun 14","F","Sweden","Tunisia",5,1),
 ]
 REMAINING = [  # date, group, home, away
- ("Sun Jun 14","E","Ivory Coast","Ecuador"),("Sun Jun 14","F","Sweden","Tunisia"),
  ("Mon Jun 15","H","Spain","Cape Verde"),("Mon Jun 15","H","Saudi Arabia","Uruguay"),
  ("Mon Jun 15","G","Belgium","Egypt"),("Mon Jun 15","G","Iran","New Zealand"),
  ("Tue Jun 16","A","Czechia","South Africa"),("Wed Jun 17","A","Mexico","South Korea"),
@@ -263,25 +264,43 @@ for _,g,h,a in REMAINING: remaining_by_group[g].append((h,a))
 qualify = Counter(); win_grp = Counter()
 champ = Counter(); finalist = Counter(); semi = Counter(); quarter = Counter()
 pts_sum = Counter()
+boot_goals = Counter()   # (team, player) -> total goals across all sims
+boot_wins  = Counter()   # (team, player) -> times this player was a sim's top scorer
 
-def rank_group(g):
+def attribute(team, n, tally):       # spread n known goals across a team's scorers
+    for _ in range(n):
+        nm = scorer(team)
+        if nm != "Others": tally[(team, nm)] += 1
+
+def rank_group(g, tally):
     pts = {t:0 for t in GROUPS[g]}; gd = {t:0 for t in GROUPS[g]}; gf = {t:0 for t in GROUPS[g]}
     def apply(h,a,hs,as_):
         gd[h]+=hs-as_; gd[a]+=as_-hs; gf[h]+=hs; gf[a]+=as_
         if hs>as_: pts[h]+=3
         elif as_>hs: pts[a]+=3
         else: pts[h]+=1; pts[a]+=1
-    for h,a,hs,as_ in played_by_group[g]: apply(h,a,hs,as_)
+    for h,a,hs,as_ in played_by_group[g]:
+        apply(h,a,hs,as_); attribute(h,hs,tally); attribute(a,as_,tally)
     for h,a in remaining_by_group[g]:
-        hg,ag,_ = sim_match(h,a); apply(h,a,hg,ag)
+        hg,ag,sc = sim_match(h,a,want_scorers=True); apply(h,a,hg,ag)
+        for tm,nm in sc: tally[(tm,nm)] += 1
     order = sorted(GROUPS[g], key=lambda t:(pts[t],gd[t],gf[t],random.random()), reverse=True)
     for t in GROUPS[g]: pts_sum[t]+=pts[t]
     return order, pts, gd, gf
 
+def ko_play(a, b, tally):
+    hg, ag, sc = sim_match(a, b, want_scorers=True)
+    for tm,nm in sc: tally[(tm,nm)] += 1
+    if hg > ag: return a
+    if ag > hg: return b
+    pa = 0.5 + (RATINGS[a]-RATINGS[b]) / 4000.0          # penalties, slight edge
+    return a if random.random() < min(0.75,max(0.25,pa)) else b
+
 for _ in range(TOURNAMENT_SIMS):
+    tally = Counter()
     winners=[]; runners=[]; thirds=[]
     for g in GROUPS:
-        order,pts,gd,gf = rank_group(g)
+        order,pts,gd,gf = rank_group(g, tally)
         winners.append(order[0]); runners.append(order[1])
         thirds.append((order[2], pts[order[2]], gd[order[2]], gf[order[2]]))
     best_thirds = [t for t,_,_,_ in sorted(thirds,key=lambda x:(x[1],x[2],x[3],random.random()),reverse=True)[:8]]
@@ -290,19 +309,20 @@ for _ in range(TOURNAMENT_SIMS):
     for t in field: qualify[t]+=1
     # seed by rating, standard single-elim bracket
     seeds = sorted(field, key=lambda t:RATINGS[t], reverse=True)
-    round_teams = []
-    for i in range(16): round_teams.append((seeds[i], seeds[31-i]))
-    # R32
-    r16=[ko_winner(a,b) for a,b in round_teams]
-    for t in r16: pass
-    # R16 -> QF
-    qf=[ko_winner(r16[i],r16[i+1]) for i in range(0,16,2)]
+    round_teams = [(seeds[i], seeds[31-i]) for i in range(16)]
+    r16 = [ko_play(a,b,tally) for a,b in round_teams]
+    qf  = [ko_play(r16[i],r16[i+1],tally) for i in range(0,16,2)]
     for t in qf: quarter[t]+=1
-    sf=[ko_winner(qf[i],qf[i+1]) for i in range(0,8,2)]
+    sf  = [ko_play(qf[i],qf[i+1],tally) for i in range(0,8,2)]
     for t in sf: semi[t]+=1
-    fin=[ko_winner(sf[0],sf[1]), ko_winner(sf[2],sf[3])]
+    fin = [ko_play(sf[0],sf[1],tally), ko_play(sf[2],sf[3],tally)]
     for t in fin: finalist[t]+=1
-    champ[ko_winner(fin[0],fin[1])]+=1
+    champ[ko_play(fin[0],fin[1],tally)] += 1
+    # golden boot: accumulate goals + credit this sim's leading scorer
+    boot_goals.update(tally)
+    if tally:
+        top = max(tally.values())
+        boot_wins[random.choice([k for k,v in tally.items() if v==top])] += 1
 
 T = TOURNAMENT_SIMS
 # expected standings per group (sorted by expected points)
@@ -317,6 +337,10 @@ for g in GROUPS:
 
 title = [[t, round(100*champ[t]/T,1), round(100*finalist[t]/T,1), round(100*semi[t]/T,1)]
          for t in sorted(champ, key=lambda t:champ[t], reverse=True)]
+
+# Golden Boot race: expected goals + P(top scorer) per player
+golden_boot = [[name, team, round(g/T,2), round(100*boot_wins[(team,name)]/T,1)]
+               for (team,name),g in boot_goals.most_common(20)]
 
 # ---------------------------------------------------------------------------
 # Report
@@ -339,6 +363,10 @@ print("\n================  TITLE ODDS (Monte Carlo)  ================")
 for t,c,f,s in title[:16]:
     print(f"  {t:<14} win {c:>4}%   final {f:>4}%   semi {s:>4}%")
 
+print("\n================  GOLDEN BOOT RACE (Monte Carlo)  ================")
+for name,team,xg,p in golden_boot[:12]:
+    print(f"  {name:<16} ({team:<13}) xGoals {xg:>4}   win boot {p:>4}%")
+
 # ---------------------------------------------------------------------------
 # Emit sim_results.js for the dashboard
 # ---------------------------------------------------------------------------
@@ -350,6 +378,7 @@ SIM = {
  "games": game_results,
  "standings": standings,
  "title": title,
+ "golden_boot": golden_boot,
 }
 with open("sim_results.js","w",encoding="utf-8") as f:
     f.write("window.SIM = " + json.dumps(SIM, ensure_ascii=False) + ";\n")

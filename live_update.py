@@ -57,11 +57,21 @@ def norm(name):
     return ALIASES.get(name, name)
 
 def fetch_football_data(api_key, competition="WC"):
-    """football-data.org v4. Returns list of normalised match dicts."""
+    """football-data.org v4. Returns list of normalised match dicts.
+    Honours the API's rate-limit headers (free tier ~10 req/min) to avoid throttling."""
     url = f"https://api.football-data.org/v4/competitions/{competition}/matches"
     req = urllib.request.Request(url, headers={"X-Auth-Token": api_key})
     with urllib.request.urlopen(req, timeout=20) as r:
         data = json.load(r)
+        # Daniel's tip: watch the headers so we don't hit the rate limiter.
+        remaining = r.headers.get("X-Requests-Available-Minute")
+        if remaining is not None:
+            try:
+                if int(remaining) <= 1:
+                    print("  Rate limit nearly reached — pausing 60s to reset...")
+                    time.sleep(60)
+            except ValueError:
+                pass
     out = []
     for m in data.get("matches", []):
         grp = (m.get("group") or "").replace("GROUP_", "").strip() or None
@@ -85,6 +95,12 @@ def update_once(api_key, competition):
     try:
         matches = fetch_football_data(api_key, competition)
     except urllib.error.HTTPError as e:
+        if e.code == 429:   # too many requests — respect Retry-After and skip this cycle
+            wait = e.headers.get("Retry-After", "60")
+            print(f"  Rate limited (429). Wait {wait}s before the next call.")
+            try: time.sleep(min(120, int(wait)))
+            except ValueError: time.sleep(60)
+            return False
         print(f"  API error {e.code}: {e.reason}. "
               f"{'Check your FOOTBALL_API_KEY / plan.' if e.code in (401,403) else ''}")
         return False

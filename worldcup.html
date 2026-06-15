@@ -64,7 +64,8 @@
     border:1px solid var(--line);border-radius:14px;background:var(--panel);padding:12px 14px;margin-bottom:10px}
   .team{display:flex;align-items:center;gap:9px;min-width:0}
   .team.away{justify-content:flex-end;text-align:right}
-  .team .fl{font-size:22px;line-height:1}
+  .fl{width:23px;height:17px;border-radius:3px;object-fit:cover;vertical-align:middle;
+    margin:0 2px;box-shadow:0 0 0 1px rgba(0,0,0,.35);background:#222}
   .team .nm{font-weight:600;font-size:14.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .mid{text-align:center;min-width:74px}
   .score{font-size:20px;font-weight:800;font-variant-numeric:tabular-nums}
@@ -160,6 +161,7 @@
     <div class="tab" data-tab="scores">📊 Scores</div>
     <div class="tab" data-tab="standings">🏆 Standings</div>
     <div class="tab" data-tab="bracket">🗺️ Bracket</div>
+    <div class="tab" data-tab="boot">👟 Golden Boot</div>
     <div class="tab" data-tab="news">📰 News</div>
   </nav>
 
@@ -190,6 +192,12 @@
 
   <!-- BRACKET -->
   <section id="bracket"><div id="brk"></div></section>
+
+  <!-- GOLDEN BOOT -->
+  <section id="boot">
+    <div class="filters"><span class="hint">Top scorer race — expected goals & chance of winning the Golden Boot, aggregated across every simulated tournament (players on teams that go deep score more).</span></div>
+    <div id="bootList"></div>
+  </section>
 
   <!-- NEWS -->
   <section id="news">
@@ -345,7 +353,7 @@ const BRACKET = {
 const FALLBACK_CHAMP = {team:"Spain", note:"Most-likely single winner — yet still only ~20% to actually lift it. They must win four straight knockouts vs elite sides. Every team here is more likely to lose the Cup than win it."};
 
 // ---- Data is (re)built here from window.SIM, overlaid with window.LIVE -----
-let FIXTURES, STANDINGS, TITLE, SIM_META, SIM_RUNS=0, LIVE_MATCHES=[], LAST_UPDATED="";
+let FIXTURES, STANDINGS, TITLE, GOLDEN, SIM_META, SIM_RUNS=0, LIVE_MATCHES=[], LAST_UPDATED="";
 function buildData(){
   const SIM = window.SIM || null;
   const LIVE = window.LIVE || null;
@@ -363,6 +371,7 @@ function buildData(){
       });
     });
     TITLE = SIM.title;
+    GOLDEN = SIM.golden_boot || [];
     SIM_RUNS = SIM.tournament_sims;
     SIM_META = `${SIM.sims_per_game.toLocaleString()} sims/game · ${SIM.tournament_sims.toLocaleString()} tournament runs`;
     LAST_UPDATED = (LIVE && LIVE.updated) ? LIVE.updated : (SIM.generated || "snapshot");
@@ -372,7 +381,7 @@ function buildData(){
     Object.keys(FALLBACK_STANDINGS).forEach(g=>{
       STANDINGS[g] = FALLBACK_STANDINGS[g].map(r=>({team:r[0],xpts:r[2],q:null,wg:null,adv:r[3]}));
     });
-    TITLE = [["Spain",20,28,42],["France",18,26,40]]; SIM_RUNS=0;
+    TITLE = [["Spain",20,28,42],["France",18,26,40]]; GOLDEN=[]; SIM_RUNS=0;
     SIM_META = "embedded snapshot (run simulate_worldcup.py for live sim data)";
     LAST_UPDATED = "snapshot";
   }
@@ -404,12 +413,26 @@ const NEWS = [
 <script>
 /* ============================ RENDER ============================ */
 const $ = s=>document.querySelector(s);
+// ISO codes for real flag images (renders everywhere, incl. Windows where emoji flags don't)
+const CODE = {
+ "Mexico":"mx","South Africa":"za","South Korea":"kr","Czechia":"cz","Canada":"ca",
+ "Bosnia & H.":"ba","Qatar":"qa","Switzerland":"ch","Brazil":"br","Morocco":"ma",
+ "Haiti":"ht","Scotland":"gb-sct","USA":"us","Paraguay":"py","Australia":"au",
+ "Türkiye":"tr","Germany":"de","Curaçao":"cw","Ivory Coast":"ci","Ecuador":"ec",
+ "Netherlands":"nl","Japan":"jp","Sweden":"se","Tunisia":"tn","Belgium":"be",
+ "Egypt":"eg","Iran":"ir","New Zealand":"nz","Spain":"es","Cape Verde":"cv",
+ "Saudi Arabia":"sa","Uruguay":"uy","France":"fr","Senegal":"sn","Iraq":"iq",
+ "Norway":"no","Argentina":"ar","Algeria":"dz","Austria":"at","Jordan":"jo",
+ "Portugal":"pt","DR Congo":"cd","Uzbekistan":"uz","Colombia":"co","England":"gb-eng",
+ "Croatia":"hr","Ghana":"gh","Panama":"pa"
+};
+const fl = t => { const c=CODE[t];
+  return c ? `<img class="fl" src="https://flagcdn.com/24x18/${c}.png" srcset="https://flagcdn.com/48x36/${c}.png 2x" alt="" loading="lazy">` : ""; };
 const confClass = c => c>=80?"green":c>=65?"lime":c>=55?"amber":"red";
 const confBadge = c => c>=80?["b-lock","🔒 STRONG"]:c>=55?["b-lean","⚖️ LEAN"]:["b-coin","🎲 COIN-FLIP"];
 const confTier  = c => c>=80?"lock":c>=55?"lean":"coin";
-const fl = t => FLAG[t]||"🏳️";
 
-function teamHTML(t,side){return `<div class="team ${side}">${side==='away'?'':`<span class="fl">${fl(t)}</span>`}<span class="nm">${t}</span>${side==='away'?`<span class="fl">${fl(t)}</span>`:''}</div>`;}
+function teamHTML(t,side){return `<div class="team ${side}">${side==='away'?'':fl(t)}<span class="nm">${t}</span>${side==='away'?fl(t):''}</div>`;}
 
 function pickText(m){
   if(m.pick==="draw") return `Draw ${m.ps}`;
@@ -540,6 +563,25 @@ function renderBracket(){
   $("#brk").innerHTML=h;
 }
 
+function renderBoot(){
+  if(!GOLDEN || !GOLDEN.length){ $("#bootList").innerHTML='<div class="hint">No simulation data.</div>'; return; }
+  const maxXg = GOLDEN[0][2] || 1;
+  let h = `<div class="gcard"><table><thead><tr><th>#</th><th>Player</th><th>xGoals</th><th>Win 👟</th></tr></thead><tbody>`;
+  GOLDEN.slice(0,15).forEach((r,i)=>{
+    const [name,team,xg,p]=r;
+    h += `<tr class="${i===0?'q1':i===1?'q2':''}">
+      <td><span class="pos">${i+1}</span></td>
+      <td class="tn">${fl(team)} <b>${name}</b> <span class="hint">${team}</span></td>
+      <td><div style="display:flex;align-items:center;gap:8px;justify-content:flex-end">
+        <div class="confbar" style="max-width:110px"><i style="width:${Math.round(100*xg/maxXg)}%;background:var(--gold)"></i></div>
+        <b style="color:var(--gold)">${xg.toFixed(2)}</b></div></td>
+      <td>${p}%</td></tr>`;
+  });
+  h += `</tbody></table></div>
+    <div class="hint" style="margin-top:8px">xGoals = mean goals per simulated tournament. "Win 👟" = share of simulations this player finished as outright top scorer.</div>`;
+  $("#bootList").innerHTML=h;
+}
+
 function renderNews(){
   $("#tickRow").innerHTML = (NEWS.concat(NEWS)).map(n=>`<span>${n[0]} <b>${n[1]}</b></span>`).join("");
   $("#newsList").innerHTML = NEWS.map(n=>`<div class="news">
@@ -581,7 +623,7 @@ function renderFooter(){
 }
 
 function renderAll(){
-  renderPred();renderScores();renderStandings();renderBracket();renderNews();
+  renderPred();renderScores();renderStandings();renderBracket();renderBoot();renderNews();
   updateHeader();renderFooter();
 }
 
