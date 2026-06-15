@@ -296,6 +296,7 @@
 <script src="sim_results.js"></script>
 <script src="live_data.js" onerror="/* optional: only present when live_update.py has run */"></script>
 <script src="odds_data.js" onerror="/* optional: only present when odds_update.py has run */"></script>
+<script src="model_report.js" onerror="/* optional: only present when backtest.py has run */"></script>
 <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js" onerror="/* offline: globe falls back to dots */"></script>
 <script>
 "use strict";
@@ -926,7 +927,9 @@ function updateHeader(){
 }
 function renderFooter(){
   const liveOn = /^https?:/.test(location.protocol);
-  $("#foot").innerHTML = `<b>Engine:</b> Monte Carlo simulation (<code>simulate_worldcup.py</code>) — ${SIM_META}.
+  const mr = window.MODELREPORT;
+  const mrLine = mr ? `<b>✅ Backtested:</b> ${mr.model.acc}% accuracy · ${mr.model.logloss} log-loss over ${mr.n.toLocaleString()} out-of-sample matches — <b>${mr.logloss_gain_pct}% better</b> than a base-rate baseline (${mr.baseline.acc}%). Our ratings correlate ${mr.ratings_corr} with fitted Elo. <span class="hint">(run backtest.py to refresh)</span><br>` : "";
+  $("#foot").innerHTML = mrLine + `<b>Engine:</b> Monte Carlo simulation (<code>simulate_worldcup.py</code>) — ${SIM_META}.
   Each match: Elo-style power ratings (from bookmaker title odds + FIFA/Elo + early results) → Poisson goals; every goal attributed to a scorer by squad scoring-share. Already-played games are held to their real scores; only remaining games are simulated.
   <br><b>Live data:</b> ${window.LIVE ? "connected via <code>live_update.py</code> — real scores overlaid and predictions re-simulated as games finish." : "not connected. Run <code>live_update.py</code> (needs a free football-data.org key) to go real-time."}
   ${liveOn ? "Auto-refreshing every 45s." : "<b>Open via a local server</b> (see below) for auto-refresh; opened as a file, it shows the latest snapshot."}

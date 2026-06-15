@@ -9,6 +9,8 @@ live_data.js
 results_override.json
 sim_results.js
 odds_data.js
+model_report.js
+intl_results.csv
 
 # saved API key (keep secrets out of git)
 apikey.txt
