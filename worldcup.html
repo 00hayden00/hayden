@@ -30,6 +30,10 @@
   .sub{color:var(--muted);font-size:12px;margin-top:2px}
   .clock{text-align:right}
   .clock .t{font-variant-numeric:tabular-nums;font-size:15px;font-weight:600}
+  .refresh{background:var(--panel2);color:var(--accent);border:1px solid var(--line);border-radius:8px;
+    padding:2px 8px;font-size:11px;cursor:pointer;margin-left:4px}
+  .refresh:hover{border-color:var(--accent)}
+  .refresh.spin{opacity:.5;pointer-events:none}
   .live-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--red);
     margin-right:6px;animation:pulse 1.4s infinite}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
@@ -154,7 +158,7 @@
     </div>
     <div class="clock">
       <div class="t" id="clock">--:--:--</div>
-      <div class="sub">Data snapshot: <span id="asof">Jun 15, 2026</span></div>
+      <div class="sub">Data: <span id="asof">snapshot</span> <button id="refreshBtn" class="refresh" title="Fetch latest now">🔄 Refresh</button></div>
     </div>
   </header>
 
@@ -673,21 +677,29 @@ function tick(){ $("#clock").textContent = new Date().toLocaleTimeString(); }
 setInterval(tick,1000); tick();
 
 /* live polling — re-pull sim_results.js + live_data.js when served over http(s) */
+const btn = $("#refreshBtn");
 function refreshLiveData(){
-  if(!/^https?:/.test(location.protocol)) return;   // file:// can't fetch local files
+  if(!/^https?:/.test(location.protocol)){      // file:// can't fetch — just reload
+    if(btn) btn.title = "Open via http://localhost to enable live refresh";
+    return Promise.resolve(false);
+  }
+  if(btn) btn.classList.add("spin");
   const bust = "?t=" + Date.now();
-  Promise.allSettled([
+  return Promise.allSettled([
     fetch("sim_results.js"+bust).then(r=>r.ok?r.text():Promise.reject()),
     fetch("live_data.js"+bust).then(r=>r.ok?r.text():Promise.reject()),
   ]).then(res=>{
     let changed=false;
     res.forEach(p=>{ if(p.status==="fulfilled"){ try{ (0,eval)(p.value); changed=true; }catch(e){} }});
-    if(changed){ const at=sel.value, cf=confFilter; buildData(); renderAll(); sel.value=at; }
+    if(changed){ const at=sel.value; buildData(); renderAll(); sel.value=at; }
+    if(btn) btn.classList.remove("spin");
+    return changed;
   });
 }
-setInterval(refreshLiveData, 45000);
-
+if(btn) btn.onclick = ()=>{ if(/^https?:/.test(location.protocol)) refreshLiveData(); else location.reload(); };
+setInterval(refreshLiveData, 30000);   // auto every 30s
 renderAll();
+setTimeout(refreshLiveData, 1500);      // pull fresh data shortly after load
 </script>
 </body>
 </html>
