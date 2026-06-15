@@ -928,8 +928,13 @@ function updateHeader(){
 function renderFooter(){
   const liveOn = /^https?:/.test(location.protocol);
   const mr = window.MODELREPORT;
-  const mrLine = mr ? `<b>✅ Backtested:</b> ${mr.model.acc}% accuracy · ${mr.model.logloss} log-loss over ${mr.n.toLocaleString()} out-of-sample matches — <b>${mr.logloss_gain_pct}% better</b> than a base-rate baseline (${mr.baseline.acc}%). Our ratings correlate ${mr.ratings_corr} with fitted Elo. <span class="hint">(run backtest.py to refresh)</span><br>` : "";
-  $("#foot").innerHTML = mrLine + `<b>Engine:</b> Monte Carlo simulation (<code>simulate_worldcup.py</code>) — ${SIM_META}.
+  const tk = window.SIM && window.SIM.track;
+  const trackLine = tk ? (tk.n>0
+    ? `<b>📈 Live track record:</b> <b>${tk.acc}% correct</b> · Brier ${tk.brier} · log-loss ${tk.logloss} over ${tk.n} completed match${tk.n>1?"es":""} — vs base-rate ${tk.base_acc}% / ${tk.base_brier} / ${tk.base_logloss}. Model has learned from ${tk.learned_from} result${tk.learned_from!==1?"s":""} so far.<br>`
+    : `<b>📈 Live track record:</b> tracking — no completed matches scored yet (learning from ${tk.learned_from} result${tk.learned_from!==1?"s":""}).<br>`) : "";
+  const improvements = `<b>🛠️ Improvements since v1:</b> minnow overrating fixed (Curaçao 18%→~6%) · market fit 4.6pp→~4.1pp vs FanDuel · ratings validated 0.90 corr w/ backtested Elo · 15% Elo blend · now learns from live results.<br>`;
+  const mrLine = mr ? `<b>✅ Backtested:</b> ${mr.model.acc}% accuracy · ${mr.model.logloss} log-loss over ${mr.n.toLocaleString()} out-of-sample matches — <b>${mr.logloss_gain_pct}% better</b> than a base-rate baseline (${mr.baseline.acc}%). Ratings correlate ${mr.ratings_corr} with fitted Elo.<br>` : "";
+  $("#foot").innerHTML = trackLine + improvements + mrLine + `<b>Engine:</b> Monte Carlo simulation (<code>simulate_worldcup.py</code>) — ${SIM_META}.
   Each match: Elo-style power ratings (from bookmaker title odds + FIFA/Elo + early results) → Poisson goals; every goal attributed to a scorer by squad scoring-share. Already-played games are held to their real scores; only remaining games are simulated.
   <br><b>Live data:</b> ${window.LIVE ? "connected via <code>live_update.py</code> — real scores overlaid and predictions re-simulated as games finish." : "not connected. Run <code>live_update.py</code> (needs a free football-data.org key) to go real-time."}
   ${liveOn ? "Auto-refreshing every 45s." : "<b>Open via a local server</b> (see below) for auto-refresh; opened as a file, it shows the latest snapshot."}

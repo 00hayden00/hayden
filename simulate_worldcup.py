@@ -262,6 +262,50 @@ def ko_winner(a, b):
     return a if random.random() < min(0.75,max(0.25,pa)) else b
 
 # ---------------------------------------------------------------------------
+# In-tournament learning + live track record.
+# (a) Score the pre-tournament forecast on completed games -> track record.
+# (b) Nudge ratings from results so far (Elo) so forward predictions sharpen
+#     as the tournament progresses. (a) is computed first, before (b), so the
+#     scored forecast never peeks at the result it's being graded on.
+# ---------------------------------------------------------------------------
+def threeway(h, a):
+    hx, ax = expected_goals(h, a)
+    pH=pD=pA=0.0
+    for i in range(9):
+        for j in range(9):
+            p = ppmf(i,hx)*ppmf(j,ax)
+            if i>j: pH+=p
+            elif j>i: pA+=p
+            else: pD+=p
+    s=pH+pD+pA; return pH/s, pD/s, pA/s
+
+BASE_RATE = (0.49, 0.24, 0.27)          # historical home/draw/away frequencies (baseline)
+tn=tc=0; tb=tl=0.0; bb=bl=bc=0.0
+for d,g,h,a,hs,as_ in PLAYED:
+    pr = threeway(h,a); oc = 0 if hs>as_ else 2 if as_>hs else 1
+    tn += 1
+    tb += sum((pr[k]-(1 if k==oc else 0))**2 for k in range(3))
+    tl += -math.log(max(1e-12, pr[oc]))
+    if max(range(3), key=lambda k:pr[k])==oc: tc += 1
+    bb += sum((BASE_RATE[k]-(1 if k==oc else 0))**2 for k in range(3))
+    bl += -math.log(BASE_RATE[oc])
+    if max(range(3), key=lambda k:BASE_RATE[k])==oc: bc += 1
+track = {"n":tn, "learned_from":len(PLAYED),
+         "acc":round(100*tc/tn) if tn else 0, "brier":round(tb/tn,3) if tn else 0, "logloss":round(tl/tn,3) if tn else 0,
+         "base_acc":round(100*bc/tn) if tn else 0, "base_brier":round(bb/tn,3) if tn else 0, "base_logloss":round(bl/tn,3) if tn else 0}
+
+# (b) Elo form update from tournament results
+for d,g,h,a,hs,as_ in PLAYED:
+    ha = 55 if h in HOSTS else 0
+    We = 1.0/(1.0 + 10**((RATINGS[a]-(RATINGS[h]+ha))/400.0))
+    actual = 1.0 if hs>as_ else 0.5 if hs==as_ else 0.0
+    gd = abs(hs-as_); mov = 1.0 if gd<=1 else 1.5 if gd==2 else (11+gd)/8.0
+    delta = 60*mov*(actual-We); RATINGS[h]+=delta; RATINGS[a]-=delta
+if PLAYED:
+    print(f"Learned from {len(PLAYED)} tournament result(s); track record: "
+          f"{track['acc']}% acc vs {track['base_acc']}% baseline over {tn} scored games")
+
+# ---------------------------------------------------------------------------
 # 1) Per-game predictions (remaining games)
 # ---------------------------------------------------------------------------
 print(f"Simulating {len(REMAINING)} remaining group games x {SIMS_PER_GAME:,} each...")
@@ -462,6 +506,7 @@ SIM = {
  "golden_boot": golden_boot,
  "bracket": bracket,
  "squads": squads,
+ "track": track,
 }
 with open("sim_results.js","w",encoding="utf-8") as f:
     f.write("window.SIM = " + json.dumps(SIM, ensure_ascii=False) + ";\n")
