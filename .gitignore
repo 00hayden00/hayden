@@ -7,3 +7,6 @@ venv/
 # generated at runtime by live_update.py
 live_data.js
 results_override.json
+
+# saved API key (keep secrets out of git)
+apikey.txt

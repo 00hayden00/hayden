@@ -83,6 +83,17 @@ A self-contained **Monte Carlo** predictor for the 2026 World Cup, just for fun.
 **Quick look (static snapshot):** just **double-click `worldcup.html`** — it opens
 in your browser and runs off the committed simulation. No install, no server.
 
+**One-command launcher (recommended):** starts the live updater + web server and
+opens the page for you.
+
+- **Windows:** `powershell -ExecutionPolicy Bypass -File .\start.ps1`
+- **macOS / Linux:** `./start.sh`  (run `chmod +x start.sh` once first)
+
+The first run asks for your free football-data.org API token and saves it to
+`apikey.txt` (gitignored) so you won't be asked again. Press Enter to skip and run
+in snapshot mode. To stop, close the helper windows (Windows) or press Ctrl+C
+(macOS/Linux).
+
 **Live / real-time mode** (auto-refreshing scores + re-simulated predictions):
 
 1. Get a free API token at <https://www.football-data.org/client/register>.
