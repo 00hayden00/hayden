@@ -37,19 +37,20 @@ SIMS_PER_GAME   = 10000   # per remaining group game (scorers / scoreline / W-D-
 TOURNAMENT_SIMS = 10000   # full-tournament runs (qualification % + title odds)
 
 # ---------------------------------------------------------------------------
-# Power ratings  (Elo-style; higher = stronger)
+# Power ratings — calibrated to real international Elo (eloratings.net-style),
+# so the spread between elite sides and minnows is realistic. This fixes the
+# old bug where compressed ratings overrated weak teams (Curaçao etc.).
 # ---------------------------------------------------------------------------
 RATINGS = {
- "Spain":2080,"France":2070,"England":2010,"Argentina":2010,"Portugal":2000,
- "Brazil":1995,"Germany":1990,"Netherlands":1940,"Belgium":1890,"Uruguay":1885,
- "Norway":1880,"Morocco":1875,"Croatia":1870,"Colombia":1865,"Senegal":1860,
- "Japan":1855,"Mexico":1850,"Switzerland":1850,"USA":1845,"Ecuador":1840,
- "Austria":1825,"South Korea":1820,"Türkiye":1820,"Sweden":1815,"Egypt":1810,"Ivory Coast":1810,
- "Canada":1810,"Iran":1800,"Algeria":1795,"Australia":1795,"Czechia":1790,
- "Scotland":1785,"Paraguay":1780,"Tunisia":1760,"Bosnia & H.":1760,"Ghana":1755,
- "DR Congo":1750,"Uzbekistan":1740,"Qatar":1740,"Panama":1730,"Saudi Arabia":1730,
- "South Africa":1730,"Iraq":1720,"Jordan":1710,"Cape Verde":1700,"New Zealand":1700,
- "Haiti":1670,"Curaçao":1660,
+ "Spain":2090,"France":2075,"Argentina":2065,"Brazil":2035,"England":2015,"Portugal":2000,
+ "Germany":1980,"Netherlands":1975,"Belgium":1905,"Uruguay":1905,"Croatia":1900,"Colombia":1895,
+ "Morocco":1885,"Switzerland":1860,"Senegal":1855,"Japan":1850,"Norway":1835,"USA":1835,
+ "Austria":1825,"Mexico":1820,"Ecuador":1820,"Canada":1820,"Türkiye":1815,"Iran":1805,
+ "South Korea":1800,"Sweden":1795,"Algeria":1790,"Ivory Coast":1790,"Egypt":1785,"Czechia":1785,
+ "Scotland":1775,"Australia":1765,"Paraguay":1745,"Bosnia & H.":1740,"Ghana":1720,"DR Congo":1715,
+ "Tunisia":1705,"South Africa":1690,"Qatar":1685,"Uzbekistan":1680,"Saudi Arabia":1665,
+ "Panama":1655,"Iraq":1645,"Cape Verde":1625,"Jordan":1620,"New Zealand":1600,
+ "Haiti":1520,"Curaçao":1505,
 }
 HOSTS = {"Mexico","Canada","USA"}
 
@@ -192,9 +193,25 @@ if os.path.exists("results_override.json"):
 def expected_goals(home, away):
     rh = RATINGS[home] + (55 if home in HOSTS else 0)
     ra = RATINGS[away] + (55 if away in HOSTS else 0)
-    sup = (rh - ra) / 100.0 * 0.50          # rating diff -> goal supremacy
+    sup = (rh - ra) / 100.0 * 0.55          # rating diff -> goal supremacy (best-fit to FanDuel lines)
     total = 2.65
-    return max(0.18,(total+sup)/2), max(0.18,(total-sup)/2)
+    return max(0.13,(total+sup)/2), max(0.13,(total-sup)/2)
+
+def ppmf(k, lam):                            # Poisson pmf, for analytic match probabilities
+    return math.exp(-lam) * lam**k / math.factorial(k)
+
+def ko_prob(a, b):                           # P(a beats b) in a knockout (draws -> ~coin flip)
+    hx, ax = expected_goals(a, b)
+    pa = pd = pb = 0.0
+    for i in range(10):
+        for j in range(10):
+            p = ppmf(i,hx)*ppmf(j,ax)
+            if i>j: pa += p
+            elif j>i: pb += p
+            else: pd += p
+    pa += pd*0.5; pb += pd*0.5
+    s = pa + pb or 1.0
+    return pa/s
 
 def poisson(lam):
     L, k, p = math.exp(-lam), 0, 1.0
@@ -352,6 +369,46 @@ golden_boot = [[name, team, round(g/T,2), round(100*boot_wins[(team,name)]/T,1)]
                for (team,name),g in boot_goals.most_common(20)]
 
 # ---------------------------------------------------------------------------
+# Projected knockout bracket (deterministic: higher win-prob advances).
+# Field = each group's projected top 2 + 8 best third-placed by qualify%.
+# Seeded by rating; this is a projection (real R32 pairings depend on the
+# final standings + FIFA's third-place matrix).
+# ---------------------------------------------------------------------------
+gsorted = sorted(standings.keys())
+winners  = [standings[g][0][0] for g in gsorted]
+runners  = [standings[g][1][0] for g in gsorted]
+thirds   = sorted([(standings[g][2][0], standings[g][2][2]) for g in gsorted],
+                  key=lambda x:x[1], reverse=True)
+best_thirds = [t for t,_ in thirds[:8]]
+field = winners + runners + best_thirds
+seeds = sorted(field, key=lambda t:RATINGS[t], reverse=True)
+
+def play_round(ties):
+    rows, advancing = [], []
+    for a,b in ties:
+        pa = ko_prob(a,b); w = a if pa>=0.5 else b
+        rows.append([a, b, w, round(100*max(pa,1-pa))]); advancing.append(w)
+    return rows, advancing
+
+def seed_positions(n):                       # standard bracket order so #1 & #2 meet only in the final
+    pos = [1, 2]
+    while len(pos) < n:
+        m = len(pos)*2 + 1
+        pos = [x for s in pos for x in (s, m - s)]
+    return pos
+ordered = [seeds[p-1] for p in seed_positions(32)]
+r32_ties = [(ordered[i], ordered[i+1]) for i in range(0, 32, 2)]
+r32, w16 = play_round(r32_ties)
+r16, w8  = play_round([(w16[i],w16[i+1]) for i in range(0,16,2)])
+qf,  w4  = play_round([(w8[i],w8[i+1])  for i in range(0,8,2)])
+sf,  w2  = play_round([(w4[i],w4[i+1])  for i in range(0,4,2)])
+fin, wch = play_round([(w2[0],w2[1])])
+bracket = {"r32":r32, "r16":r16, "qf":qf, "sf":sf, "f":fin, "champion":wch[0]}
+
+# Key players per team (scoring shares) for the team detail pages
+squads = {t:[[n, round(w*100)] for n,w in SQUADS[t] if n!="Others"] for t in SQUADS}
+
+# ---------------------------------------------------------------------------
 # Report
 # ---------------------------------------------------------------------------
 print("\n================  PER-GAME PREDICTIONS (sim-derived)  ================")
@@ -388,6 +445,8 @@ SIM = {
  "standings": standings,
  "title": title,
  "golden_boot": golden_boot,
+ "bracket": bracket,
+ "squads": squads,
 }
 with open("sim_results.js","w",encoding="utf-8") as f:
     f.write("window.SIM = " + json.dumps(SIM, ensure_ascii=False) + ";\n")

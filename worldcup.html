@@ -170,6 +170,35 @@
   .news .body{color:#cdd8d0;font-size:13px;line-height:1.5}
   .news .meta{color:var(--muted);font-size:11px;margin-top:6px}
   footer{margin-top:30px;color:var(--muted);font-size:11.5px;line-height:1.6;border-top:1px solid var(--line);padding-top:16px}
+  /* bracket */
+  .brkwrap{display:flex;gap:12px;overflow-x:auto;padding:4px 2px 12px}
+  .brkcol{display:flex;flex-direction:column;justify-content:space-around;gap:8px;min-width:158px;flex:0 0 auto}
+  .brkcol h5{margin:0 0 2px;color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:1px;text-align:center}
+  .tiebox{border:1px solid var(--line);border-radius:8px;background:var(--panel);overflow:hidden}
+  .tierow{display:flex;align-items:center;gap:6px;padding:5px 8px;font-size:12px;cursor:pointer}
+  .tierow .fl{width:20px;height:15px}
+  .tierow+.tierow{border-top:1px solid var(--line)}
+  .tierow:hover{background:#15201a}
+  .tierow.tiewin{color:#fff;font-weight:700;background:rgba(19,53,31,0.5)}
+  .tierow.tielose{color:var(--muted)}
+  .tiep{font-size:9px;color:var(--accent);text-align:right;padding:2px 8px;border-top:1px dashed var(--line)}
+  .champbox{border:1px solid var(--gold);border-radius:10px;background:linear-gradient(135deg,#2a2200aa,#0f140f);padding:14px 10px;text-align:center;font-size:14px;cursor:pointer}
+  /* team modal */
+  .modal{position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.62);display:none;align-items:flex-start;justify-content:center;padding:36px 14px;overflow:auto}
+  .modal.open{display:flex}
+  .modalcard{max-width:560px;width:100%;background:#0f1410;border:1px solid var(--line);border-radius:16px;padding:18px}
+  .modalcard .mh{display:flex;align-items:center;gap:10px}
+  .modalcard .mh .nm{font-size:20px;font-weight:800}
+  .modalcard .x{margin-left:auto;cursor:pointer;background:none;border:none;color:var(--muted);font-size:20px}
+  .mstats{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}
+  .mstat{border:1px solid var(--line);border-radius:10px;padding:8px 12px;min-width:80px;background:var(--panel)}
+  .mstat .v{font-size:18px;font-weight:800}
+  .mstat .l{font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+  .msec{margin-top:14px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px}
+  .mplayers{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+  .mfix{display:flex;align-items:center;gap:8px;padding:7px 0;border-top:1px solid var(--line);font-size:13px}
+  .res{font-weight:800} .res-W{color:var(--green)} .res-L{color:var(--red)} .res-D{color:var(--muted)}
+  .teamlink{cursor:pointer}
 </style>
 </head>
 <body>
@@ -261,6 +290,8 @@
 
   <footer id="foot"></footer>
 </div>
+
+<div class="modal" id="teamModal"><div class="modalcard" id="teamModalBody"></div></div>
 
 <script src="sim_results.js"></script>
 <script src="live_data.js" onerror="/* optional: only present when live_update.py has run */"></script>
@@ -400,16 +431,12 @@ const FALLBACK_STANDINGS = {
   L:[["England",3,9,"adv"],["Croatia",3,6,"adv"],["Ghana",3,1,""],["Panama",3,1,""]],
 };
 
-const BRACKET = {
-  QF:[["Spain","Brazil","Spain",58],["Argentina","Germany","Argentina",52],
-      ["France","Portugal","France",60],["England","Netherlands","England",65]],
-  SF:[["Spain","Argentina","Spain",55],["France","England","France",52]],
-  F :[["Spain","France","Spain",52]],
-};
-const FALLBACK_CHAMP = {team:"Spain", note:"Most-likely single winner — yet still only ~20% to actually lift it. They must win four straight knockouts vs elite sides. Every team here is more likely to lose the Cup than win it."};
+const FALLBACK_CHAMP = {team:"Spain", note:"Most-likely single winner — yet still only ~20% to actually lift it."};
 
 // ---- Data is (re)built here from window.SIM, overlaid with window.LIVE -----
 let FIXTURES, STANDINGS, TITLE, GOLDEN, SIM_META, SIM_RUNS=0, LIVE_MATCHES=[], LAST_UPDATED="", ALIVE=new Set();
+let BRACKET=null, SQUADS_D={}, TEAMGROUP={};
+const attr=s=>String(s).replace(/&/g,"&amp;").replace(/"/g,"&quot;");
 function buildData(){
   const SIM = window.SIM || null;
   const LIVE = window.LIVE || null;
@@ -455,6 +482,10 @@ function buildData(){
   // teams still alive (for the globe highlight): qualify% > 0, or unknown -> alive
   ALIVE = new Set();
   Object.values(STANDINGS).forEach(rows=>rows.forEach(r=>{ if(r.q==null || r.q>0) ALIVE.add(r.team); }));
+  BRACKET = SIM ? SIM.bracket : null;
+  SQUADS_D = SIM ? (SIM.squads||{}) : {};
+  TEAMGROUP = {};
+  Object.keys(STANDINGS).forEach(g=>STANDINGS[g].forEach(r=>TEAMGROUP[r.team]=g));
 }
 buildData();
 
@@ -512,7 +543,7 @@ const confClass = c => c>=80?"green":c>=65?"lime":c>=55?"amber":"red";
 const confBadge = c => c>=80?["b-lock","🔒 STRONG"]:c>=55?["b-lean","⚖️ LEAN"]:["b-coin","🎲 COIN-FLIP"];
 const confTier  = c => c>=80?"lock":c>=55?"lean":"coin";
 
-function teamHTML(t,side){return `<div class="team ${side}">${side==='away'?'':fl(t)}<span class="nm">${t}</span>${side==='away'?fl(t):''}</div>`;}
+function teamHTML(t,side){return `<div class="team ${side} teamlink" data-team="${attr(t)}">${side==='away'?'':fl(t)}<span class="nm">${t}</span>${side==='away'?fl(t):''}</div>`;}
 
 // --- dates/times in US Eastern (from the API's real kickoff when available) ---
 const ET = "America/New_York";
@@ -670,7 +701,7 @@ function renderStandings(){
       const qcol = r.q==null?"var(--muted)":`var(--${confClass(r.q)})`;
       const now = CP[r.team]||0;
       html+=`<tr class="${cls}"><td><span class="pos">${i+1}</span></td>
-        <td class="tn">${fl(r.team)} ${r.team}${tag}</td>
+        <td class="tn teamlink" data-team="${attr(r.team)}">${fl(r.team)} ${r.team}${tag}</td>
         <td><b>${now}</b></td>
         <td style="color:var(--muted)">${r.xpts}</td>
         <td><b style="color:${qcol}">${q}</b></td></tr>`;
@@ -681,29 +712,80 @@ function renderStandings(){
 }
 
 function renderBracket(){
-  const champ = TITLE[0], second = TITLE[1];
-  let h = `<div class="champ"><div class="lbl">🏆 Most-likely Champion (Monte Carlo)</div>
-       <div class="nm">${fl(champ[0])} ${champ[0]}</div>
-       <div class="cap"><b>${champ[1]}%</b> of simulations — i.e. ~${Math.round(100-champ[1])}% of the time, someone else wins.
-       Projected final vs ${fl(second[0])} ${second[0]}. Even the favourite is far likelier to lose the Cup than win it.</div></div>`;
-
+  let h="";
+  // ---- visual projected bracket ----
+  if(BRACKET){
+    const tieBox=t=>{ const [a,b,w,p]=t;
+      const row=team=>`<div class="tierow ${team===w?'tiewin':'tielose'} teamlink" data-team="${attr(team)}">${fl(team)}<span class="nm">${team}</span></div>`;
+      return `<div class="tiebox">${row(a)}${row(b)}<div class="tiep">${w} ${p}%</div></div>`; };
+    const col=(title,ties)=>`<div class="brkcol"><h5>${title}</h5>${ties.map(tieBox).join("")}</div>`;
+    h += `<div class="hint" style="margin:2px 0 8px">Projected knockout path — the favourite advances each tie (win % shown). Pairings are rating-seeded; real R32 matchups depend on final group standings.</div>`;
+    h += `<div class="brkwrap">
+       ${col('Round of 32',BRACKET.r32)}
+       ${col('Round of 16',BRACKET.r16)}
+       ${col('Quarters',BRACKET.qf)}
+       ${col('Semis',BRACKET.sf)}
+       ${col('Final',BRACKET.f)}
+       <div class="brkcol"><h5>Champion</h5><div class="champbox teamlink" data-team="${attr(BRACKET.champion)}">${fl(BRACKET.champion)}<br><b>${BRACKET.champion}</b></div></div>
+      </div>`;
+  }
+  // ---- Monte Carlo title race ----
   h += `<div class="rnd"><h4>Title race — share of ${SIM_RUNS?SIM_RUNS.toLocaleString():'many'} simulated tournaments</h4></div>`;
   h += `<div class="gcard"><table><thead><tr><th>#</th><th>Team</th><th>Win 🏆</th><th>Final</th><th>Semi</th></tr></thead><tbody>`;
   TITLE.slice(0,16).forEach((r,i)=>{
-    const [t,w,f,s]=r;
-    const bw = Math.min(100, w*5); // scale small win% for the bar
+    const [t,w,f,s]=r; const bw=Math.min(100,w*5);
     h += `<tr class="${i===0?'q1':i===1?'q2':''}">
       <td><span class="pos">${i+1}</span></td>
-      <td class="tn">${fl(t)} ${t}</td>
+      <td class="tn teamlink" data-team="${attr(t)}">${fl(t)} ${t}</td>
       <td><div style="display:flex;align-items:center;gap:8px;justify-content:flex-end">
         <div class="confbar" style="max-width:90px"><i style="width:${bw}%;background:var(--gold)"></i></div>
         <b style="color:var(--gold)">${w}%</b></div></td>
       <td>${f}%</td><td>${s}%</td></tr>`;
   });
   h += `</tbody></table></div>`;
-  h += `<div class="hint" style="margin-top:8px">Note: knockout pairings use rating-based seeding (not FIFA's exact third-place matrix), so individual paths are approximate — but champion/final/semi shares are robust across ${SIM_RUNS?SIM_RUNS.toLocaleString():'many'} runs.</div>`;
   $("#brk").innerHTML=h;
 }
+
+/* ---- team detail page (modal) ---- */
+function openTeam(team){
+  if(!team || !STANDINGS) return;
+  const grp=TEAMGROUP[team]||"", rows=STANDINGS[grp]||[];
+  const idx=rows.findIndex(r=>r.team===team), st=rows[idx]||{};
+  const cp=currentPoints()[team]||0;
+  const ti=(TITLE||[]).find(t=>t[0]===team);
+  const players=(SQUADS_D[team]||[]);
+  const games=FIXTURES.filter(m=>m.home===team||m.away===team).sort((a,b)=>kickMs(a)-kickMs(b));
+  const stat=(v,l)=>`<div class="mstat"><div class="v">${v}</div><div class="l">${l}</div></div>`;
+  const playerChips=players.slice(0,6).map(p=>{ const g=(GOLDEN||[]).find(x=>x[0]===p[0]&&x[1]===team);
+    return `<span class="scchip">${p[0]} <b>${g?g[2]+" xG":p[1]+"%"}</b></span>`; }).join("") || '<span class="hint">—</span>';
+  const fixHTML=games.map(m=>{ const opp=m.home===team?m.away:m.home, ha=m.home===team?"vs":"@"; let right;
+    if(m.status==="FT"||m.status==="LIVE"){ const gf=m.home===team?m.hs:m.as, ga=m.home===team?m.as:m.hs;
+      const r=gf>ga?"W":gf<ga?"L":"D"; right=`<b>${gf}–${ga}</b> <span class="res res-${r}">${r}</span>${m.status==="LIVE"?' <span style="color:var(--red);font-size:10px">LIVE</span>':''}`; }
+    else { const winner=m.pick==="draw"?"Draw":(m.pick==="home"?m.home:m.away);
+      const lean=winner==="Draw"?"Draw likely":(winner===team?"Win likely":"Loss likely");
+      right=`<span class="hint">${lean} · ${m.conf||"?"}%</span>`; }
+    return `<div class="mfix"><span class="hint" style="width:18px">${ha}</span> ${fl(opp)} <span class="teamlink" data-team="${attr(opp)}">${opp}</span>
+       <span style="margin-left:auto;text-align:right">${right}</span>
+       ${m.kickoff?`<span class="hint" style="width:84px;text-align:right">${dayLabel(m)}</span>`:""}</div>`; }).join("");
+  $("#teamModalBody").innerHTML=`
+    <div class="mh">${fl(team)}<span class="nm">${team}</span>
+      <span class="hint" style="margin-left:6px">Group ${grp}</span>
+      <button class="x" onclick="closeTeam()">✕</button></div>
+    <div class="mstats">
+      ${stat(cp,"Points now")}
+      ${stat(st.xpts!=null?st.xpts:"—","xPts")}
+      ${stat(st.q!=null?st.q+"%":"—","Qualify")}
+      ${stat(idx>=0?"#"+(idx+1):"—","Proj. finish")}
+      ${stat(ti?ti[1]+"%":"<1%","Win cup")}
+      ${stat(ti?ti[3]+"%":"—","Reach semi")}
+    </div>
+    <div class="msec">Key players (scoring share / tournament xG)</div>
+    <div class="mplayers">${playerChips}</div>
+    <div class="msec">Fixtures</div>
+    ${fixHTML||'<div class="hint">—</div>'}`;
+  $("#teamModal").classList.add("open");
+}
+function closeTeam(){ $("#teamModal").classList.remove("open"); }
 
 function renderBoot(){
   if(!GOLDEN || !GOLDEN.length){ $("#bootList").innerHTML='<div class="hint">No simulation data.</div>'; return; }
@@ -828,6 +910,11 @@ document.querySelectorAll(".chip").forEach(c=>c.onclick=()=>{
   renderPred();
 });
 sel.onchange=renderPred;
+
+/* team detail: open on any element tagged with data-team */
+document.addEventListener("click",e=>{ const el=e.target.closest("[data-team]"); if(el) openTeam(el.getAttribute("data-team")); });
+$("#teamModal").addEventListener("click",e=>{ if(e.target.id==="teamModal") closeTeam(); });
+document.addEventListener("keydown",e=>{ if(e.key==="Escape") closeTeam(); });
 
 /* header status + footer */
 function updateHeader(){
@@ -992,8 +1079,8 @@ setTimeout(refreshLiveData, 1500);      // pull fresh data shortly after load
     world.features.forEach(f=>{
       const st=statusISO(f.id);
       ctx.beginPath(); pathGen(f);
-      if(st==="active"){ ctx.fillStyle="rgb(124,168,208)"; ctx.fill(); ctx.strokeStyle="rgba(190,230,255,0.95)"; ctx.lineWidth=0.8; ctx.stroke(); }
-      else if(st==="out"){ ctx.fillStyle="rgb(142,146,156)"; ctx.fill(); ctx.strokeStyle="rgba(170,172,182,0.6)"; ctx.lineWidth=0.6; ctx.stroke(); }
+      if(st==="active"){ ctx.fillStyle="rgba(95,150,200,0.28)"; ctx.fill(); ctx.strokeStyle="rgba(195,230,255,1)"; ctx.lineWidth=0.9; ctx.stroke(); }
+      else if(st==="out"){ ctx.fillStyle="rgba(125,128,138,0.26)"; ctx.fill(); ctx.strokeStyle="rgba(180,182,192,0.8)"; ctx.lineWidth=0.7; ctx.stroke(); }
       else{ ctx.strokeStyle="rgba(120,175,225,0.5)"; ctx.lineWidth=0.5; ctx.stroke(); }     // not in tournament: borders only
     });
     // host accent
