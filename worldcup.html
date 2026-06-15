@@ -435,9 +435,9 @@ const confTier  = c => c>=80?"lock":c>=55?"lean":"coin";
 function teamHTML(t,side){return `<div class="team ${side}">${side==='away'?'':fl(t)}<span class="nm">${t}</span>${side==='away'?fl(t):''}</div>`;}
 
 function pickText(m){
-  if(m.pick==="draw") return `Draw ${m.ps}`;
+  if(m.pick==="draw") return `Draw`;
   const w = m.pick==="home"?m.home:m.away;
-  return `${fl(w)} ${w} ${m.ps}`;
+  return `${fl(w)} ${w} to win`;
 }
 
 function matchCard(m,showPred){
