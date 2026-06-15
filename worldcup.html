@@ -76,6 +76,7 @@
   .vs{color:var(--muted);font-size:12px;font-weight:700}
   .status{font-size:10px;letter-spacing:.5px;margin-top:3px;text-transform:uppercase}
   .st-ft{color:var(--muted)} .st-live{color:var(--red)} .st-up{color:var(--accent)}
+  .kick{font-size:10.5px;color:var(--muted);margin-top:2px;white-space:nowrap}
   .grp{font-size:10px;color:var(--muted);border:1px solid var(--line);border-radius:6px;padding:1px 6px;margin-left:6px}
 
   /* Prediction block under match */
@@ -397,12 +398,13 @@ function buildData(){
     SIM_META = "embedded snapshot (run simulate_worldcup.py for live sim data)";
     LAST_UPDATED = "snapshot";
   }
-  // overlay real-time results / live minutes from the updater
+  // overlay real-time results / live minutes / accurate kickoff times from the updater
   LIVE_MATCHES = [];
   if (LIVE && LIVE.matches) {
     LIVE.matches.forEach(lm=>{
       const f = FIXTURES.find(x=>x.group===lm.group && x.home===lm.home && x.away===lm.away);
       if(!f) return;
+      if(lm.utc) f.kickoff = lm.utc;                 // authoritative date/time from the API
       if(lm.status==="FINISHED" && lm.hs!=null){ f.status="FT"; f.hs=lm.hs; f.as=lm["as"]; }
       else if(lm.status==="LIVE"){ f.status="LIVE"; f.hs=lm.hs||0; f.as=lm["as"]||0; f.minute=lm.minute; LIVE_MATCHES.push(f); }
     });
@@ -445,6 +447,33 @@ const confBadge = c => c>=80?["b-lock","🔒 STRONG"]:c>=55?["b-lean","⚖️ LE
 const confTier  = c => c>=80?"lock":c>=55?"lean":"coin";
 
 function teamHTML(t,side){return `<div class="team ${side}">${side==='away'?'':fl(t)}<span class="nm">${t}</span>${side==='away'?fl(t):''}</div>`;}
+
+// --- dates/times in US Eastern (from the API's real kickoff when available) ---
+const ET = "America/New_York";
+function dayLabel(m){
+  if(m.kickoff) return new Date(m.kickoff).toLocaleDateString("en-US",{timeZone:ET,weekday:"short",month:"short",day:"numeric"});
+  return m.date || "TBD";
+}
+function timeLabel(m){
+  if(!m.kickoff) return "";
+  return new Date(m.kickoff).toLocaleTimeString("en-US",{timeZone:ET,hour:"numeric",minute:"2-digit"}) + " ET";
+}
+function kickMs(m){
+  if(m.kickoff) return Date.parse(m.kickoff);
+  const s = (m.date||"").split(" ").slice(1).join(" ");      // "Tue Jun 16" -> "Jun 16"
+  const t = Date.parse(s + " 2026");
+  return isNaN(t) ? 8.64e15 : t;                              // unknown -> sort last
+}
+// actual points each team has from finished games (live-accurate)
+function currentPoints(){
+  const pts={};
+  FIXTURES.forEach(m=>{
+    if(m.status!=="FT") return;
+    pts[m.home]=pts[m.home]||0; pts[m.away]=pts[m.away]||0;
+    if(m.hs>m.as) pts[m.home]+=3; else if(m.as>m.hs) pts[m.away]+=3; else { pts[m.home]++; pts[m.away]++; }
+  });
+  return pts;
+}
 
 // Win/draw/away probabilities for a match. For LIVE games with a known minute and
 // expected-goals, recompute from the CURRENT score (real-time). Otherwise use the
@@ -517,7 +546,7 @@ function matchCard(m,showPred){
   }
   return `<div class="match">
       ${teamHTML(m.home,'home')}
-      <div class="mid">${mid}<div class="status ${stCls}">${stTxt}</div></div>
+      <div class="mid">${mid}<div class="status ${stCls}">${stTxt}</div>${timeLabel(m)?`<div class="kick">${timeLabel(m)}</div>`:''}</div>
       ${teamHTML(m.away,'away')}
       <span class="grp" style="position:absolute"></span>
       ${pred}
@@ -533,14 +562,13 @@ let confFilter=null;
 function renderPred(){
   let list=FIXTURES.filter(m=>m.status!=="FT");
   if(sel.value!=="all") list=list.filter(m=>m.group===sel.value);
-  if(confFilter) list=list.filter(m=>confTier(m.conf)===confFilter);
-  // group by date
-  const byDay={};
-  list.forEach(m=>{(byDay[m.date]=byDay[m.date]||[]).push(m);});
-  let html="";
-  Object.keys(byDay).forEach(d=>{
-    html+=`<div class="day">${d}</div>`;
-    byDay[d].forEach(m=>html+=matchCardWithGroup(m,true));
+  if(confFilter) list=list.filter(m=>m.conf!=null && confTier(m.conf)===confFilter);
+  list.sort((a,b)=>kickMs(a)-kickMs(b));        // soonest kickoff at the top
+  let html="", curDay=null;
+  list.forEach(m=>{
+    const d=dayLabel(m);
+    if(d!==curDay){ html+=`<div class="day">${d}</div>`; curDay=d; }
+    html+=matchCardWithGroup(m,true);
   });
   $("#predList").innerHTML = html || `<div class="hint" style="padding:20px">No matches for this filter.</div>`;
   $("#predCount").textContent = `${list.length} games`;
@@ -552,30 +580,33 @@ function matchCardWithGroup(m,showPred){
 }
 
 function renderScores(){
-  const played=FIXTURES.filter(m=>m.status==="FT");
-  const byDay={};
-  played.forEach(m=>{(byDay[m.date]=byDay[m.date]||[]).push(m);});
-  let html="";
-  Object.keys(byDay).forEach(d=>{
-    html+=`<div class="day">${d}</div>`;
-    byDay[d].forEach(m=>html+=matchCardWithGroup(m,false));
+  let played=FIXTURES.filter(m=>m.status==="FT"||m.status==="LIVE");
+  played.sort((a,b)=>kickMs(b)-kickMs(a));      // most recent at the top
+  let html="", curDay=null;
+  played.forEach(m=>{
+    const d=dayLabel(m);
+    if(d!==curDay){ html+=`<div class="day">${d}</div>`; curDay=d; }
+    html+=matchCardWithGroup(m,false);
   });
-  $("#scoreList").innerHTML=html;
+  $("#scoreList").innerHTML=html || `<div class="hint" style="padding:20px">No games played yet.</div>`;
 }
 
 function renderStandings(){
+  const CP = currentPoints();
   let html="";
   Object.keys(STANDINGS).forEach(g=>{
-    html+=`<div class="gcard"><h3><span>Group ${g}</span><span class="hint">expected finish</span></h3>
-      <table><thead><tr><th></th><th>Team</th><th>xPts</th><th>Qualify</th></tr></thead><tbody>`;
+    html+=`<div class="gcard"><h3><span>Group ${g}</span><span class="hint">Pts = now · xPts = projected</span></h3>
+      <table><thead><tr><th></th><th>Team</th><th>Pts</th><th>xPts</th><th>Qualify</th></tr></thead><tbody>`;
     STANDINGS[g].forEach((r,i)=>{
       const cls=i===0?"q1":i===1?"q2":(r.adv==="third"?"q3":"");
       const tag=i===0?'<span class="tag adv">WIN</span>':r.adv==="adv"?'<span class="tag adv">ADV</span>':r.adv==="third"?'<span class="tag third">3rd?</span>':"";
       const q = r.q==null ? "—" : `${r.q}%`;
       const qcol = r.q==null?"var(--muted)":`var(--${confClass(r.q)})`;
+      const now = CP[r.team]||0;
       html+=`<tr class="${cls}"><td><span class="pos">${i+1}</span></td>
         <td class="tn">${fl(r.team)} ${r.team}${tag}</td>
-        <td>${r.xpts}</td>
+        <td><b>${now}</b></td>
+        <td style="color:var(--muted)">${r.xpts}</td>
         <td><b style="color:${qcol}">${q}</b></td></tr>`;
     });
     html+="</tbody></table></div>";

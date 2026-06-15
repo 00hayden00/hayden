@@ -88,6 +88,7 @@ def fetch_football_data(api_key, competition="WC"):
             "hs": ft.get("home"),
             "as": ft.get("away"),
             "minute": m.get("minute"),
+            "utc": m.get("utcDate"),      # real kickoff (ISO 8601 UTC) for accurate dates
         })
     return out
 
