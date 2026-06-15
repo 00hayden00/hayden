@@ -22,6 +22,7 @@ so --props can eat your monthly quota quickly -- it only pulls upcoming games.
 """
 
 import os, sys, json, argparse, urllib.request, urllib.error
+from datetime import datetime, timezone
 try:
     from live_update import norm, KNOWN            # reuse team-name mapping
 except Exception:
@@ -57,8 +58,18 @@ def fanduel_market(event, market_key):
 def fetch_h2h(key, sport):
     url = f"{API}/sports/{sport}/odds/?apiKey={key}&regions=us&markets=h2h&oddsFormat=decimal&bookmakers={BOOK}"
     events, remaining = _get(url)
-    out = []
+    now = datetime.now(timezone.utc)
+    out, skipped_live = [], 0
     for e in events:
+        # skip games already kicked off — their odds are LIVE/in-play, not pre-match,
+        # so they can't be compared to the model's pre-match probabilities.
+        ct = e.get("commence_time")
+        if ct:
+            try:
+                if datetime.fromisoformat(ct.replace("Z","+00:00")) <= now:
+                    skipped_live += 1; continue
+            except ValueError:
+                pass
         oc = fanduel_market(e, "h2h")
         if not oc:
             continue
@@ -70,8 +81,8 @@ def fetch_h2h(key, sport):
             elif nm == e.get("away_team"): prices["A"] = o["price"]
             elif nm.lower() == "draw": prices["D"] = o["price"]
         if home in KNOWN and away in KNOWN and len(prices) == 3:
-            out.append({"home":home, "away":away, "h2h":prices, "id":e.get("id")})
-    return out, remaining
+            out.append({"home":home, "away":away, "h2h":prices, "id":e.get("id"), "utc":ct})
+    return out, remaining, skipped_live
 
 def fetch_props(key, sport, events, limit=10):
     """Anytime-goalscorer odds per game. One request per event -> uses quota."""
@@ -109,10 +120,11 @@ def main():
     sport = wc_sport_key(key)
     print(f"Sport key: {sport}")
     try:
-        matches, remaining = fetch_h2h(key, sport)
+        matches, remaining, skipped = fetch_h2h(key, sport)
     except urllib.error.HTTPError as e:
         print(f"Odds API error {e.code}: {e.reason}"); sys.exit(1)
-    print(f"  {len(matches)} match-winner markets from FanDuel  (requests remaining: {remaining})")
+    print(f"  {len(matches)} upcoming (pre-match) markets from FanDuel; skipped {skipped} "
+          f"already-started/in-play  (requests remaining: {remaining})")
 
     scorers = []
     if args.props and matches:
