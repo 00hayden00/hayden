@@ -18,6 +18,12 @@ if [ -z "$KEY" ]; then
   [ -n "$KEY" ] && echo "$KEY" > apikey.txt && echo "Saved to apikey.txt (gitignored)."
 fi
 
+# ensure predictions exist (generate once if missing)
+if [ ! -f sim_results.js ]; then
+  echo "Generating initial predictions (one-time, ~30-60s)..."
+  "$PY" simulate_worldcup.py >/dev/null
+fi
+
 pids=()
 cleanup() { echo; echo "Stopping..."; for p in "${pids[@]}"; do kill "$p" 2>/dev/null || true; done; }
 trap cleanup EXIT INT TERM

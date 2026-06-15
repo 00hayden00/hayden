@@ -26,6 +26,12 @@ if (-not $key) {
     if ($key) { $key.Trim() | Set-Content ".\apikey.txt"; Write-Host "Saved to apikey.txt (gitignored)." -ForegroundColor Green }
 }
 
+# --- ensure predictions exist (generate once if missing) -------------------
+if (-not (Test-Path ".\sim_results.js")) {
+    Write-Host "Generating initial predictions (one-time, ~30-60s)..." -ForegroundColor Cyan
+    & $py simulate_worldcup.py | Out-Null
+}
+
 # --- launch the web server in its own window -------------------------------
 Write-Host "Starting web server on http://localhost:8000 ..." -ForegroundColor Cyan
 Start-Process powershell -ArgumentList "-NoExit", "-Command", "$py -m http.server 8000" -WorkingDirectory $PSScriptRoot
