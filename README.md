@@ -71,9 +71,36 @@ A self-contained **Monte Carlo** predictor for the 2026 World Cup, just for fun.
   remaining games are simulated. Runs thousands of sims per game plus thousands of
   full-tournament runs, then writes `sim_results.js`.
   Run it with `python3 simulate_worldcup.py`.
-- `worldcup.html` — a live-style dashboard (open in any browser) that reads
-  `sim_results.js`: latest scores, news, per-game picks with **confidence + likely
-  scorers**, qualification odds per group, and a Monte Carlo title race.
+- `worldcup.html` — a dashboard (open in any browser) that reads `sim_results.js`:
+  latest scores, news, per-game picks with **confidence + likely scorers**,
+  qualification odds per group, and a Monte Carlo title race.
+- `live_update.py` — pulls **real** match data from a football API, overlays live
+  scores/minutes on the dashboard, and re-runs the simulation so predictions track
+  reality.
+
+### How to open the dashboard
+
+**Quick look (static snapshot):** just **double-click `worldcup.html`** — it opens
+in your browser and runs off the committed simulation. No install, no server.
+
+**Live / real-time mode** (auto-refreshing scores + re-simulated predictions):
+
+1. Get a free API token at <https://www.football-data.org/client/register>.
+2. In a terminal, from this folder:
+   ```bash
+   export FOOTBALL_API_KEY=your_token        # Windows: set FOOTBALL_API_KEY=your_token
+   python3 live_update.py --watch 60         # fetches + re-simulates every 60s
+   ```
+3. In a second terminal, serve the folder so the page can poll for updates:
+   ```bash
+   python3 -m http.server 8000
+   ```
+4. Open <http://localhost:8000/worldcup.html>. It auto-refreshes every 45s, shows
+   live minutes, and predictions update as games finish.
+
+> Why the server? Browsers block a file opened with `file://` from fetching local
+> files, so auto-refresh only works over `http://`. Without the API key it simply
+> keeps showing the latest snapshot.
 
 > ⚠️ Predictions are for entertainment only — a model cannot make uncertain events
 > certain. Never bet money you can't afford to lose. Help: **1-800-GAMBLER**.

@@ -154,6 +154,31 @@ for _,g,h,a,*_ in PLAYED: GROUPS[g].update([h,a])
 for _,g,h,a in REMAINING: GROUPS[g].update([h,a])
 
 # ---------------------------------------------------------------------------
+# Live override: if live_update.py has written real results, fold them in so
+# predictions reflect reality. results_override.json = [[group,home,away,hs,as],...]
+# ---------------------------------------------------------------------------
+import os
+if os.path.exists("results_override.json"):
+    with open("results_override.json", encoding="utf-8") as f:
+        overrides = json.load(f)
+    # base truth = hardcoded results, then augment/correct with the live overrides
+    scores = {(g,h,a): (hs,as_) for _,g,h,a,hs,as_ in PLAYED}
+    for o in overrides:
+        scores[(o[0], o[1], o[2])] = (o[3], o[4])
+    date_of = {}
+    for d,g,h,a,*_ in PLAYED: date_of[(g,h,a)] = d
+    for d,g,h,a in REMAINING: date_of[(g,h,a)] = d
+    new_played, new_remaining = [], []
+    for (g,h,a), d in date_of.items():
+        if (g,h,a) in scores:
+            hs, as_ = scores[(g,h,a)]; new_played.append((d,g,h,a,hs,as_))
+        else:
+            new_remaining.append((d,g,h,a))
+    PLAYED, REMAINING = new_played, new_remaining
+    print(f"Applied {len(overrides)} live override(s); {len(PLAYED)} games now final, "
+          f"{len(REMAINING)} to simulate")
+
+# ---------------------------------------------------------------------------
 # Core model
 # ---------------------------------------------------------------------------
 def expected_goals(home, away):

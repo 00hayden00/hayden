@@ -140,7 +140,7 @@
       <div class="ball">⚽</div>
       <div>
         <h1>World Cup '26 — Live Predictor Dashboard</h1>
-        <div class="sub">USA · Canada · Mexico &nbsp;|&nbsp; <span class="live-dot"></span>Group Stage in progress</div>
+        <div class="sub">USA · Canada · Mexico &nbsp;|&nbsp; <span id="hdrStatus"><span class="live-dot"></span>Group stage</span></div>
       </div>
     </div>
     <div class="clock">
@@ -201,6 +201,7 @@
 </div>
 
 <script src="sim_results.js"></script>
+<script src="live_data.js" onerror="/* optional: only present when live_update.py has run */"></script>
 <script>
 "use strict";
 /* ============================================================================
@@ -228,7 +229,6 @@ const FLAG = {
 // Data is built from the Monte Carlo engine (simulate_worldcup.py -> sim_results.js).
 // If sim_results.js hasn't been generated, we fall back to the embedded snapshot.
 // ===========================================================================
-const SIM = window.SIM || null;
 const M = (date,group,home,away,o)=>Object.assign({date,group,home,away},o);
 const FALLBACK_FIXTURES = [
   // ---- PLAYED (real results) ----
@@ -344,33 +344,50 @@ const BRACKET = {
 };
 const FALLBACK_CHAMP = {team:"Spain", note:"Most-likely single winner — yet still only ~20% to actually lift it. They must win four straight knockouts vs elite sides. Every team here is more likely to lose the Cup than win it."};
 
-// ---- Resolve live (simulation) data, else fallback ----------------------
-let FIXTURES, STANDINGS, TITLE, SIM_META;
-if (SIM) {
-  FIXTURES = SIM.played.map(m=>({date:m.date,group:m.group,home:m.home,away:m.away,
-              status:"FT",hs:m.hs,as:m["as"]}))
-    .concat(SIM.games.map(m=>({date:m.date,group:m.group,home:m.home,away:m.away,status:m.status,
-              pick:m.pick,ps:m.ps,conf:m.conf,scorers:m.scorers,
-              pHome:m.pHome,pDraw:m.pDraw,pAway:m.pAway})));
-  // standings rows: [team, xPts, qualify%, winGrp%] -> add advance tag
-  STANDINGS = {};
-  Object.keys(SIM.standings).sort().forEach(g=>{
-    STANDINGS[g] = SIM.standings[g].map((r,i)=>{
-      const adv = i<=1 ? "adv" : (i===2 && r[2]>=50 ? "third" : "");
-      return {team:r[0], xpts:r[1], q:r[2], wg:r[3], adv};
+// ---- Data is (re)built here from window.SIM, overlaid with window.LIVE -----
+let FIXTURES, STANDINGS, TITLE, SIM_META, SIM_RUNS=0, LIVE_MATCHES=[], LAST_UPDATED="";
+function buildData(){
+  const SIM = window.SIM || null;
+  const LIVE = window.LIVE || null;
+  if (SIM) {
+    FIXTURES = SIM.played.map(m=>({date:m.date,group:m.group,home:m.home,away:m.away,
+                status:"FT",hs:m.hs,as:m["as"]}))
+      .concat(SIM.games.map(m=>({date:m.date,group:m.group,home:m.home,away:m.away,status:m.status,
+                pick:m.pick,ps:m.ps,conf:m.conf,scorers:m.scorers,
+                pHome:m.pHome,pDraw:m.pDraw,pAway:m.pAway})));
+    STANDINGS = {};
+    Object.keys(SIM.standings).sort().forEach(g=>{
+      STANDINGS[g] = SIM.standings[g].map((r,i)=>{
+        const adv = i<=1 ? "adv" : (i===2 && r[2]>=50 ? "third" : "");
+        return {team:r[0], xpts:r[1], q:r[2], wg:r[3], adv};
+      });
     });
-  });
-  TITLE = SIM.title;   // [[team, win%, final%, semi%], ...]
-  SIM_META = `${SIM.sims_per_game.toLocaleString()} sims/game · ${SIM.tournament_sims.toLocaleString()} tournament runs`;
-} else {
-  FIXTURES = FALLBACK_FIXTURES;
-  STANDINGS = {};
-  Object.keys(FALLBACK_STANDINGS).forEach(g=>{
-    STANDINGS[g] = FALLBACK_STANDINGS[g].map(r=>({team:r[0],xpts:r[2],q:null,wg:null,adv:r[3]}));
-  });
-  TITLE = [["Spain",20,28,42],["France",18,26,40]];
-  SIM_META = "embedded snapshot (run simulate_worldcup.py for live sim data)";
+    TITLE = SIM.title;
+    SIM_RUNS = SIM.tournament_sims;
+    SIM_META = `${SIM.sims_per_game.toLocaleString()} sims/game · ${SIM.tournament_sims.toLocaleString()} tournament runs`;
+    LAST_UPDATED = (LIVE && LIVE.updated) ? LIVE.updated : (SIM.generated || "snapshot");
+  } else {
+    FIXTURES = FALLBACK_FIXTURES;
+    STANDINGS = {};
+    Object.keys(FALLBACK_STANDINGS).forEach(g=>{
+      STANDINGS[g] = FALLBACK_STANDINGS[g].map(r=>({team:r[0],xpts:r[2],q:null,wg:null,adv:r[3]}));
+    });
+    TITLE = [["Spain",20,28,42],["France",18,26,40]]; SIM_RUNS=0;
+    SIM_META = "embedded snapshot (run simulate_worldcup.py for live sim data)";
+    LAST_UPDATED = "snapshot";
+  }
+  // overlay real-time results / live minutes from the updater
+  LIVE_MATCHES = [];
+  if (LIVE && LIVE.matches) {
+    LIVE.matches.forEach(lm=>{
+      const f = FIXTURES.find(x=>x.group===lm.group && x.home===lm.home && x.away===lm.away);
+      if(!f) return;
+      if(lm.status==="FINISHED" && lm.hs!=null){ f.status="FT"; f.hs=lm.hs; f.as=lm["as"]; }
+      else if(lm.status==="LIVE"){ f.status="LIVE"; f.hs=lm.hs||0; f.as=lm["as"]||0; f.minute=lm.minute; LIVE_MATCHES.push(f); }
+    });
+  }
 }
+buildData();
 
 const NEWS = [
   ["⚽","Germany demolish Curaçao 7–1 in record opener","Musiala back from injury and starting; Havertz bagged a brace. The smallest nation ever to qualify was overwhelmed. Germany look every bit a semifinal threat.","Group E · Jun 14"],
@@ -401,14 +418,17 @@ function pickText(m){
 }
 
 function matchCard(m,showPred){
-  const played = m.status==="FT";
-  const stCls = played?"st-ft":(m.status==="TODAY"||m.status==="LIVE")?"st-live":"st-up";
-  const stTxt = played?"Full time":(m.status==="TODAY")?"Today · predicted":(m.status==="LIVE")?"● LIVE":"Upcoming";
-  const mid = played
+  const live = m.status==="LIVE";
+  const hasScore = m.status==="FT" || live;
+  const stCls = m.status==="FT"?"st-ft":(m.status==="TODAY"||live)?"st-live":"st-up";
+  const stTxt = m.status==="FT"?"Full time"
+              : live?`<span class="live-dot"></span>LIVE${m.minute?" "+m.minute+"'":""}`
+              : (m.status==="TODAY")?"Today · predicted":"Upcoming";
+  const mid = hasScore
     ? `<div class="score">${m.hs}–${m.as}</div>`
     : `<div class="vs">VS</div>`;
   let pred="";
-  if(showPred && !played){
+  if(showPred && !hasScore){
     const [bc,bl]=confBadge(m.conf);
     pred = `<div class="pred">
         <span class="lab">Sim pick</span>
@@ -502,7 +522,7 @@ function renderBracket(){
        <div class="cap"><b>${champ[1]}%</b> of simulations — i.e. ~${Math.round(100-champ[1])}% of the time, someone else wins.
        Projected final vs ${fl(second[0])} ${second[0]}. Even the favourite is far likelier to lose the Cup than win it.</div></div>`;
 
-  h += `<div class="rnd"><h4>Title race — share of ${SIM?SIM.tournament_sims.toLocaleString():''} simulated tournaments</h4></div>`;
+  h += `<div class="rnd"><h4>Title race — share of ${SIM_RUNS?SIM_RUNS.toLocaleString():'many'} simulated tournaments</h4></div>`;
   h += `<div class="gcard"><table><thead><tr><th>#</th><th>Team</th><th>Win 🏆</th><th>Final</th><th>Semi</th></tr></thead><tbody>`;
   TITLE.slice(0,16).forEach((r,i)=>{
     const [t,w,f,s]=r;
@@ -516,7 +536,7 @@ function renderBracket(){
       <td>${f}%</td><td>${s}%</td></tr>`;
   });
   h += `</tbody></table></div>`;
-  h += `<div class="hint" style="margin-top:8px">Note: knockout pairings use rating-based seeding (not FIFA's exact third-place matrix), so individual paths are approximate — but champion/final/semi shares are robust across ${SIM?SIM.tournament_sims.toLocaleString():'many'} runs.</div>`;
+  h += `<div class="hint" style="margin-top:8px">Note: knockout pairings use rating-based seeding (not FIFA's exact third-place matrix), so individual paths are approximate — but champion/final/semi shares are robust across ${SIM_RUNS?SIM_RUNS.toLocaleString():'many'} runs.</div>`;
   $("#brk").innerHTML=h;
 }
 
@@ -542,21 +562,49 @@ document.querySelectorAll(".chip").forEach(c=>c.onclick=()=>{
 });
 sel.onchange=renderPred;
 
-/* clock */
-function tick(){
-  const d=new Date();
-  $("#clock").textContent = d.toLocaleTimeString();
+/* header status + footer */
+function updateHeader(){
+  const isLive = LIVE_MATCHES.length>0;
+  $("#hdrStatus").innerHTML = isLive
+    ? `<span class="live-dot"></span><b style="color:var(--red)">${LIVE_MATCHES.length} LIVE now</b>`
+    : `<span class="live-dot" style="background:var(--accent)"></span>Group stage`;
+  $("#asof").textContent = LAST_UPDATED;
 }
+function renderFooter(){
+  const liveOn = /^https?:/.test(location.protocol);
+  $("#foot").innerHTML = `<b>Engine:</b> Monte Carlo simulation (<code>simulate_worldcup.py</code>) — ${SIM_META}.
+  Each match: Elo-style power ratings (from bookmaker title odds + FIFA/Elo + early results) → Poisson goals; every goal attributed to a scorer by squad scoring-share. Already-played games are held to their real scores; only remaining games are simulated.
+  <br><b>Live data:</b> ${window.LIVE ? "connected via <code>live_update.py</code> — real scores overlaid and predictions re-simulated as games finish." : "not connected. Run <code>live_update.py</code> (needs a free football-data.org key) to go real-time."}
+  ${liveOn ? "Auto-refreshing every 45s." : "<b>Open via a local server</b> (see below) for auto-refresh; opened as a file, it shows the latest snapshot."}
+  <br><b>Confidence = the share of simulations the predicted outcome (W/D/L) occurred — not the exact score.</b>
+  <br>🎲 <b>For entertainment only.</b> Models cannot make uncertain events certain. Never bet what you can't lose. If gambling stops being fun: <b>1-800-GAMBLER</b>.`;
+}
+
+function renderAll(){
+  renderPred();renderScores();renderStandings();renderBracket();renderNews();
+  updateHeader();renderFooter();
+}
+
+/* clock */
+function tick(){ $("#clock").textContent = new Date().toLocaleTimeString(); }
 setInterval(tick,1000); tick();
 
-/* footer */
-$("#foot").innerHTML = `<b>Engine:</b> Monte Carlo simulation (<code>simulate_worldcup.py</code>) — ${SIM_META}.
-  Each match: Elo-style power ratings (from bookmaker title odds + FIFA/Elo + early results) → Poisson goals; every goal attributed to a scorer by squad scoring-share. Already-played games are held to their real scores; only remaining games are simulated.
-  <br><b>Confidence = the share of simulations the predicted outcome (W/D/L) occurred — not the exact score.</b> Scorelines are the modal result within that outcome and land far less often.
-  <br>Snapshot: June 15, 2026. Re-run <code>simulate_worldcup.py</code> after results to refresh <code>sim_results.js</code>.
-  <br>🎲 <b>For entertainment only.</b> Models cannot make uncertain events certain. Never bet what you can't lose. If gambling stops being fun: <b>1-800-GAMBLER</b>.`;
+/* live polling — re-pull sim_results.js + live_data.js when served over http(s) */
+function refreshLiveData(){
+  if(!/^https?:/.test(location.protocol)) return;   // file:// can't fetch local files
+  const bust = "?t=" + Date.now();
+  Promise.allSettled([
+    fetch("sim_results.js"+bust).then(r=>r.ok?r.text():Promise.reject()),
+    fetch("live_data.js"+bust).then(r=>r.ok?r.text():Promise.reject()),
+  ]).then(res=>{
+    let changed=false;
+    res.forEach(p=>{ if(p.status==="fulfilled"){ try{ (0,eval)(p.value); changed=true; }catch(e){} }});
+    if(changed){ const at=sel.value, cf=confFilter; buildData(); renderAll(); sel.value=at; }
+  });
+}
+setInterval(refreshLiveData, 45000);
 
-renderPred();renderScores();renderStandings();renderBracket();renderNews();
+renderAll();
 </script>
 </body>
 </html>

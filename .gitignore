@@ -3,3 +3,7 @@ __pycache__/
 .venv/
 venv/
 .DS_Store
+
+# generated at runtime by live_update.py
+live_data.js
+results_override.json
