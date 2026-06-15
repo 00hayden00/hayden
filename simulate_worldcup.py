@@ -52,6 +52,21 @@ RATINGS = {
  "Panama":1655,"Iraq":1645,"Cape Verde":1625,"Jordan":1620,"New Zealand":1600,
  "Haiti":1520,"Curaçao":1505,
 }
+# Blend in backtested Elo (from backtest.py) as a light prior. A 15% blend with
+# the market-tuned ratings above was the best fit to FanDuel's lines (4.07pp vs
+# 4.20pp for either alone) — the objective Elo nudges underrated sides up without
+# drifting from the market.
+ELO_BLEND = 0.15
+import os as _os
+if _os.path.exists("elo_ratings.json"):
+    try:
+        _elo = json.load(open("elo_ratings.json", encoding="utf-8"))
+        for k, v in _elo.items():
+            if k in RATINGS:
+                RATINGS[k] = round((1-ELO_BLEND)*RATINGS[k] + ELO_BLEND*v)
+        print(f"Blended {len(_elo)} backtested Elo ratings ({int(ELO_BLEND*100)}%) from elo_ratings.json")
+    except Exception:
+        pass
 HOSTS = {"Mexico","Canada","USA"}
 
 # ---------------------------------------------------------------------------

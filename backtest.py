@@ -209,6 +209,11 @@ corr = cov/(sx*sy)
 print(f"\n  Correlation (our ratings vs fitted Elo): {corr:.3f}  "
       f"({'strong' if corr>0.8 else 'moderate' if corr>0.6 else 'weak'})")
 
+# Export fitted Elo for the 48 WC teams (fall back to hand-set where unavailable)
+elo_out = {team: (round(fitted[team]) if fitted[team] is not None else OUR[team]) for team in OUR}
+json.dump(elo_out, open("elo_ratings.json","w",encoding="utf-8"), ensure_ascii=False)
+print(f"Wrote elo_ratings.json ({len(elo_out)} teams) -> simulate_worldcup.py will use these.")
+
 report = {"generated": TODAY, "test_from": TEST_FROM, "n": bestres["n"],
           "model": {"brier": round(bestres["brier"],4), "logloss": round(bestres["logloss"],4), "acc": round(bestres["acc"]*100,1)},
           "baseline": {"brier": round(base["brier"],4), "logloss": round(base["logloss"],4), "acc": round(base["acc"]*100,1)},
