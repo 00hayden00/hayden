@@ -21,8 +21,15 @@ Outputs
 * sim_results.js  ->  window.SIM = {...}  consumed by worldcup.html.
 """
 
-import math, random, json
+import sys, math, random, json
 from collections import Counter, defaultdict
+
+# Windows consoles default to cp1252 and choke on accented names (Kramarić, etc.).
+# Force UTF-8 output so printing never crashes the run.
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
 
 random.seed(26)
 

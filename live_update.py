@@ -137,10 +137,13 @@ def update_once(api_key, competition):
     print(f"  {len(clean)} matches | {len(overrides)} finished | {n_live} live -> "
           f"live_data.js, results_override.json")
 
-    # regenerate sim_results.js with reality folded in
+    # regenerate sim_results.js with reality folded in (force UTF-8 so accented
+    # player names don't crash the child process on Windows cp1252 consoles)
     print("  Re-running simulation...")
+    env = {**os.environ, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"}
     res = subprocess.run([sys.executable, "simulate_worldcup.py"],
-                         capture_output=True, text=True)
+                         capture_output=True, text=True,
+                         encoding="utf-8", errors="replace", env=env)
     if res.returncode != 0:
         print("  Simulation failed:\n" + res.stderr[-800:])
         return False
