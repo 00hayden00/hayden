@@ -992,8 +992,8 @@ setTimeout(refreshLiveData, 1500);      // pull fresh data shortly after load
     world.features.forEach(f=>{
       const st=statusISO(f.id);
       ctx.beginPath(); pathGen(f);
-      if(st==="active"){ ctx.fillStyle="rgb(84,124,162)"; ctx.fill(); ctx.strokeStyle="rgba(140,180,215,0.55)"; ctx.lineWidth=0.7; ctx.stroke(); }
-      else if(st==="out"){ ctx.fillStyle="rgb(104,108,118)"; ctx.fill(); ctx.strokeStyle="rgba(150,152,162,0.4)"; ctx.lineWidth=0.6; ctx.stroke(); }
+      if(st==="active"){ ctx.fillStyle="rgb(124,168,208)"; ctx.fill(); ctx.strokeStyle="rgba(190,230,255,0.95)"; ctx.lineWidth=0.8; ctx.stroke(); }
+      else if(st==="out"){ ctx.fillStyle="rgb(142,146,156)"; ctx.fill(); ctx.strokeStyle="rgba(170,172,182,0.6)"; ctx.lineWidth=0.6; ctx.stroke(); }
       else{ ctx.strokeStyle="rgba(120,175,225,0.5)"; ctx.lineWidth=0.5; ctx.stroke(); }     // not in tournament: borders only
     });
     // host accent
