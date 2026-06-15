@@ -968,7 +968,7 @@ setTimeout(refreshLiveData, 1500);      // pull fresh data shortly after load
 
   function setCanvas(){ const d=Math.max(1,devicePixelRatio||1); cv.width=innerWidth*d; cv.height=innerHeight*d; ctx.setTransform(d,0,0,d,0,0); }
   function layout(){ const W=innerWidth,H=innerHeight, R=Math.min(W,H)*(W<700?0.44:0.40);
-    if(proj) proj.scale(R).translate([W<700?W*0.5:W*0.70, W<700?H*0.30:H*0.46]); }
+    if(proj) proj.scale(R).translate([W<700?W*0.5:W*0.70, W<700?H*0.44:H*0.56]); }
   addEventListener("resize",()=>{ setCanvas(); layout(); });
 
   function statusOf(team){ const any=ALIVE.size>0; return (any?ALIVE.has(team):true)?"active":"out"; }
@@ -992,8 +992,8 @@ setTimeout(refreshLiveData, 1500);      // pull fresh data shortly after load
     world.features.forEach(f=>{
       const st=statusISO(f.id);
       ctx.beginPath(); pathGen(f);
-      if(st==="active"){ ctx.fillStyle="rgba(90,185,255,0.65)"; ctx.fill(); ctx.strokeStyle="rgba(190,230,255,0.95)"; ctx.lineWidth=0.8; ctx.stroke(); }
-      else if(st==="out"){ ctx.fillStyle="rgba(120,124,135,0.55)"; ctx.fill(); ctx.strokeStyle="rgba(170,172,182,0.6)"; ctx.lineWidth=0.6; ctx.stroke(); }
+      if(st==="active"){ ctx.fillStyle="rgba(90,185,255,0.40)"; ctx.fill(); ctx.strokeStyle="rgba(190,230,255,0.95)"; ctx.lineWidth=0.8; ctx.stroke(); }
+      else if(st==="out"){ ctx.fillStyle="rgba(120,124,135,0.34)"; ctx.fill(); ctx.strokeStyle="rgba(170,172,182,0.6)"; ctx.lineWidth=0.6; ctx.stroke(); }
       else{ ctx.strokeStyle="rgba(120,175,225,0.5)"; ctx.lineWidth=0.5; ctx.stroke(); }     // not in tournament: borders only
     });
     // host accent
@@ -1021,7 +1021,7 @@ setTimeout(refreshLiveData, 1500);      // pull fresh data shortly after load
       const x=Math.cos(la)*Math.sin(lo), y=Math.sin(la), z=Math.cos(la)*Math.cos(lo);
       const y2=y*Math.cos(TILT)-z*Math.sin(TILT), z2=y*Math.sin(TILT)+z*Math.cos(TILT); return {x:cx+R*x,y:cy-R*y2,z:z2}; }
     function fd(){ const W=innerWidth,H=innerHeight; ctx.clearRect(0,0,W,H);
-      const R=Math.min(W,H)*(W<700?0.42:0.38), cx=W<700?W*0.5:W*0.70, cy=W<700?H*0.30:H*0.46;
+      const R=Math.min(W,H)*(W<700?0.42:0.38), cx=W<700?W*0.5:W*0.70, cy=W<700?H*0.44:H*0.56;
       ctx.beginPath(); ctx.arc(cx,cy,R,0,7); ctx.strokeStyle="rgba(120,190,255,0.5)"; ctx.lineWidth=1.5; ctx.stroke();
       for(let lon=-180;lon<180;lon+=30) for(let lat=-90;lat<90;lat+=10){ const p=pr(lat,lon,R,cx,cy),q=pr(lat+10,lon,R,cx,cy);
         ctx.strokeStyle="rgba(110,180,255,"+((p.z+q.z)/2>=0?0.3:0.08)+")"; ctx.beginPath(); ctx.moveTo(p.x,p.y); ctx.lineTo(q.x,q.y); ctx.stroke(); }
