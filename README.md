@@ -86,17 +86,35 @@ in your browser and runs off the committed simulation. No install, no server.
 **Live / real-time mode** (auto-refreshing scores + re-simulated predictions):
 
 1. Get a free API token at <https://www.football-data.org/client/register>.
-2. In a terminal, from this folder:
+2. Make sure you're **inside this project folder** first (`cd path\to\hayden`), then
+   start the updater. Pick the snippet for your shell:
+
+   **macOS / Linux (bash/zsh):**
    ```bash
-   export FOOTBALL_API_KEY=your_token        # Windows: set FOOTBALL_API_KEY=your_token
+   export FOOTBALL_API_KEY=your_token
    python3 live_update.py --watch 60         # fetches + re-simulates every 60s
    ```
-3. In a second terminal, serve the folder so the page can poll for updates:
+   **Windows PowerShell:**
+   ```powershell
+   $env:FOOTBALL_API_KEY = "your_token"
+   python live_update.py --watch 60
+   ```
+   **Windows cmd.exe:**
+   ```bat
+   set FOOTBALL_API_KEY=your_token
+   python live_update.py --watch 60
+   ```
+3. In a **second** terminal (also `cd`'d into this folder), serve the page so it can
+   poll for updates:
    ```bash
-   python3 -m http.server 8000
+   python3 -m http.server 8000     # Windows: python -m http.server 8000
    ```
 4. Open <http://localhost:8000/worldcup.html>. It auto-refreshes every 45s, shows
-   live minutes, and predictions update as games finish.
+   live scores, and predictions update as games finish.
+
+> The env var only lasts for that terminal window, so set it in the same window you
+> run the updater from. Run `dir` (Windows) or `ls` to confirm you can see
+> `live_update.py` — if you can't, you're in the wrong folder.
 
 > Why the server? Browsers block a file opened with `file://` from fetching local
 > files, so auto-refresh only works over `http://`. Without the API key it simply
