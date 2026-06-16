@@ -92,6 +92,19 @@ def fetch_football_data(api_key, competition="WC"):
         })
     return out
 
+def fetch_scorers(api_key, competition="WC", limit=25):
+    """Actual top scorers so far (the real Golden Boot) from football-data."""
+    url = f"https://api.football-data.org/v4/competitions/{competition}/scorers?limit={limit}"
+    req = urllib.request.Request(url, headers={"X-Auth-Token": api_key})
+    with urllib.request.urlopen(req, timeout=20) as r:
+        data = json.load(r)
+    out = []
+    for s in data.get("scorers", []):
+        out.append({"name": (s.get("player") or {}).get("name", ""),
+                    "team": norm((s.get("team") or {}).get("name", "")),
+                    "goals": s.get("goals") or 0, "assists": s.get("assists") or 0})
+    return out
+
 def update_once(api_key, competition):
     try:
         matches = fetch_football_data(api_key, competition)
@@ -122,8 +135,16 @@ def update_once(api_key, competition):
     if unknown:
         print(f"  Note: unmapped team names (add to ALIASES): {sorted(unknown)}")
 
+    # actual top scorers (real Golden Boot) — refreshed each cycle so it reflects
+    # the game that just ended
+    scorers = []
+    try:
+        scorers = fetch_scorers(api_key, competition)
+    except Exception as e:
+        print(f"  scorers fetch skipped: {e}")
+
     # live_data.js for the dashboard
-    live = {"updated": time.strftime("%Y-%m-%d %H:%M:%S"), "matches": clean}
+    live = {"updated": time.strftime("%Y-%m-%d %H:%M:%S"), "matches": clean, "scorers": scorers}
     with open("live_data.js", "w", encoding="utf-8") as f:
         f.write("window.LIVE = " + json.dumps(live, ensure_ascii=False) + ";\n")
 
@@ -135,8 +156,8 @@ def update_once(api_key, competition):
         json.dump(overrides, f, ensure_ascii=False)
 
     n_live = sum(1 for m in clean if m["status"] == "LIVE")
-    print(f"  {len(clean)} matches | {len(overrides)} finished | {n_live} live -> "
-          f"live_data.js, results_override.json")
+    print(f"  {len(clean)} matches | {len(overrides)} finished | {n_live} live | "
+          f"{len(scorers)} scorers -> live_data.js, results_override.json")
 
     # regenerate sim_results.js with reality folded in (force UTF-8 so accented
     # player names don't crash the child process on Windows cp1252 consoles)

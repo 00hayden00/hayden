@@ -351,9 +351,23 @@ pred_log = {}
 if os.path.exists(PRED_LOG_FILE):
     try: pred_log = json.load(open(PRED_LOG_FILE, encoding="utf-8"))
     except Exception: pred_log = {}
+# games that have kicked off (LIVE/FINISHED) per the live feed — never overwrite
+# their frozen prediction, so the stored value is the last one before kickoff
+started = set()
+if os.path.exists("live_data.js"):
+    try:
+        _raw = open("live_data.js", encoding="utf-8").read()
+        _ld = json.loads(_raw[_raw.index("{"):_raw.rindex("}")+1])
+        for m in _ld.get("matches", []):
+            if m.get("status") in ("LIVE", "FINISHED"):
+                started.add(f"{m['group']}|{m['home']}|{m['away']}")
+    except Exception:
+        pass
 for gr in game_results:
-    pred_log[f"{gr['group']}|{gr['home']}|{gr['away']}"] = {
-        "pick":gr["pick"], "conf":gr["conf"],
+    key = f"{gr['group']}|{gr['home']}|{gr['away']}"
+    if key in started:
+        continue                          # already kicked off -> keep frozen pre-kickoff value
+    pred_log[key] = {"pick":gr["pick"], "conf":gr["conf"],
         "pH":gr["pHome"], "pD":gr["pDraw"], "pA":gr["pAway"], "backfilled":False}
 for d,g,h,a,hs,as_ in PLAYED:
     key = f"{g}|{h}|{a}"

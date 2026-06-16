@@ -807,22 +807,48 @@ function openTeam(team){
 function closeTeam(){ $("#teamModal").classList.remove("open"); }
 
 function renderBoot(){
-  if(!GOLDEN || !GOLDEN.length){ $("#bootList").innerHTML='<div class="hint">No simulation data.</div>'; return; }
-  const maxXg = GOLDEN[0][2] || 1;
-  let h = `<div class="gcard"><table><thead><tr><th>#</th><th>Player</th><th>xGoals</th><th>Win 👟</th></tr></thead><tbody>`;
-  GOLDEN.slice(0,15).forEach((r,i)=>{
-    const [name,team,xg,p]=r;
-    h += `<tr class="${i===0?'q1':i===1?'q2':''}">
-      <td><span class="pos">${i+1}</span></td>
-      <td class="tn">${fl(team)} <b>${name}</b> <span class="hint">${team}</span></td>
-      <td><div style="display:flex;align-items:center;gap:8px;justify-content:flex-end">
-        <div class="confbar" style="max-width:110px"><i style="width:${Math.round(100*xg/maxXg)}%;background:var(--gold)"></i></div>
-        <b style="color:var(--gold)">${xg.toFixed(2)}</b></div></td>
-      <td>${p}%</td></tr>`;
-  });
-  h += `</tbody></table></div>
-    <div class="hint" style="margin-top:8px">xGoals = mean goals per simulated tournament. "Win 👟" = share of simulations this player finished as outright top scorer.</div>`;
-  $("#bootList").innerHTML=h;
+  let h = "";
+  // projected total xG lookup (match live scorer name -> simulated GOLDEN entry)
+  const projXg = (name,team)=>{ if(!GOLDEN) return null; const an=normName(name);
+    const g=GOLDEN.find(x=>x[1]===team && an.includes(normName(x[0]).split(" ").pop()));
+    return g?g[2]:null; };
+  // ---- actual goals so far (live) + projected total ----
+  const real = window.LIVE && window.LIVE.scorers;
+  if(real && real.length){
+    const maxG = real[0].goals || 1;
+    h += `<div class="hint" style="margin:2px 0 8px">⚽ <b>Actual goals so far</b> (live) with each player's projected final total — updates as games end.</div>`;
+    h += `<div class="gcard"><table><thead><tr><th>#</th><th>Player</th><th>Goals</th><th>Proj. total</th><th>Ast</th></tr></thead><tbody>`;
+    real.slice(0,15).forEach((r,i)=>{
+      const px=projXg(r.name,r.team);
+      h += `<tr class="${i===0?'q1':i===1?'q2':''}"><td><span class="pos">${i+1}</span></td>
+        <td class="tn teamlink" data-team="${attr(r.team)}">${fl(r.team)} <b>${r.name}</b> <span class="hint">${r.team}</span></td>
+        <td><div style="display:flex;align-items:center;gap:8px;justify-content:flex-end">
+          <div class="confbar" style="max-width:80px"><i style="width:${Math.round(100*r.goals/maxG)}%;background:var(--gold)"></i></div>
+          <b style="color:var(--gold)">${r.goals}</b></div></td>
+        <td style="color:var(--muted)">${px!=null?px.toFixed(2):"—"}</td>
+        <td>${r.assists||0}</td></tr>`;
+    });
+    h += `</tbody></table></div>`;
+  }
+  // ---- projected final (simulated) ----
+  if(GOLDEN && GOLDEN.length){
+    const maxXg = GOLDEN[0][2] || 1;
+    h += `<div class="hint" style="margin:14px 0 8px">🔮 <b>Projected final</b> — expected goals & chance to win the Golden Boot (Monte Carlo).</div>`;
+    h += `<div class="gcard"><table><thead><tr><th>#</th><th>Player</th><th>xGoals</th><th>Win 👟</th></tr></thead><tbody>`;
+    GOLDEN.slice(0,15).forEach((r,i)=>{
+      const [name,team,xg,p]=r;
+      h += `<tr class="${i===0?'q1':i===1?'q2':''}">
+        <td><span class="pos">${i+1}</span></td>
+        <td class="tn teamlink" data-team="${attr(team)}">${fl(team)} <b>${name}</b> <span class="hint">${team}</span></td>
+        <td><div style="display:flex;align-items:center;gap:8px;justify-content:flex-end">
+          <div class="confbar" style="max-width:110px"><i style="width:${Math.round(100*xg/maxXg)}%;background:var(--gold)"></i></div>
+          <b style="color:var(--gold)">${xg.toFixed(2)}</b></div></td>
+        <td>${p}%</td></tr>`;
+    });
+    h += `</tbody></table></div>
+      <div class="hint" style="margin-top:8px">xGoals = mean goals per simulated tournament. "Win 👟" = share of sims this player finished as outright top scorer.</div>`;
+  }
+  $("#bootList").innerHTML = h || '<div class="hint">No data yet.</div>';
 }
 
 function amer(d){ return d>=2 ? "+"+Math.round((d-1)*100) : "−"+Math.round(100/(d-1)); }
