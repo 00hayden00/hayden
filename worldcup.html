@@ -184,7 +184,28 @@
   .tierow.tiewin{color:#fff;font-weight:700;background:rgba(19,53,31,0.5)}
   .tierow.tielose{color:var(--muted)}
   .tiep{font-size:9px;color:var(--accent);text-align:right;padding:2px 8px;border-top:1px dashed var(--line)}
-  .champbox{border:1px solid var(--gold);border-radius:10px;background:linear-gradient(135deg,#2a2200aa,#0f140f);padding:14px 10px;text-align:center;font-size:14px;cursor:pointer}
+  .champbox{border:1px solid var(--gold);border-radius:10px;background:linear-gradient(135deg,#2a2200aa,#0f140f);padding:12px 10px;text-align:center;font-size:13px;cursor:pointer}
+  /* qualify-to-R32 grid */
+  .qgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px}
+  .qcard{border:1px solid var(--line);border-radius:9px;background:var(--panel);padding:7px 9px}
+  .qg{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px}
+  .qrow{display:flex;align-items:center;gap:5px;font-size:12px;padding:2px 0;cursor:pointer}
+  .qrow .qn{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .qrow b{color:var(--accent)}
+  /* compact knockout tree */
+  .tree{display:flex;gap:0;overflow-x:auto;padding:4px 0 8px}
+  .tround{display:flex;flex-direction:column;justify-content:space-around;min-width:128px;flex:1 0 auto;padding:0 9px;position:relative}
+  .tround h5{margin:0 0 4px;color:var(--muted);font-size:9.5px;text-transform:uppercase;letter-spacing:1px;text-align:center}
+  .tmatch{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:7px;margin:4px 0;overflow:hidden}
+  .tround:not(.first) .tmatch::before{content:"";position:absolute;left:-9px;top:50%;width:9px;height:2px;background:var(--line)}
+  .trow{display:flex;align-items:center;gap:4px;padding:3px 7px;font-size:11px;cursor:pointer}
+  .trow .qn{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .trow .fl{width:18px;height:13px}
+  .trow+.trow{border-top:1px solid var(--line)}
+  .trow:hover{background:#15201a}
+  .trow.tw{color:#fff;font-weight:700;background:rgba(19,53,31,.5)}
+  .trow.tl{color:var(--muted)}
+  .tprob{font-size:8px;color:var(--accent);text-align:right;padding:1px 7px;border-top:1px dashed var(--line)}
   /* team modal */
   .modal{position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.62);display:none;align-items:flex-start;justify-content:center;padding:36px 14px;overflow:auto}
   .modal.open{display:flex}
@@ -732,20 +753,33 @@ function renderStandings(){
 
 function renderBracket(){
   let h="";
-  // ---- visual projected bracket ----
+  // ---- predicted to qualify for the Round of 32 ----
+  const gs=Object.keys(STANDINGS).sort();
+  if(gs.length){
+    h += `<div class="hint" style="margin:2px 0 7px">🎟️ <b>Predicted to reach the Round of 32</b> — each group's top 2, with qualify %.</div>`;
+    h += `<div class="qgrid">` + gs.map(g=>{
+      const r=STANDINGS[g];
+      return `<div class="qcard"><div class="qg">Group ${g}</div>` +
+        [0,1].map(i=>`<div class="qrow teamlink" data-team="${attr(r[i].team)}">${fl(r[i].team)}<span class="qn">${r[i].team}</span><b>${r[i].q!=null?r[i].q+"%":""}</b></div>`).join("") +
+        `</div>`;
+    }).join("") + `</div>`;
+    const thirds=gs.map(g=>STANDINGS[g][2]).filter(Boolean).sort((a,b)=>(b.q||0)-(a.q||0)).slice(0,8);
+    h += `<div class="hint" style="margin:8px 0 12px"><b>Best third-placed (8 advance):</b> ` +
+      thirds.map(t=>`<span class="teamlink" data-team="${attr(t.team)}" style="white-space:nowrap">${fl(t.team)} ${t.team} ${t.q!=null?t.q+"%":""}</span>`).join(" · ") + `</div>`;
+  }
+  // ---- compact knockout tree (from Round of 16) ----
   if(BRACKET){
-    const tieBox=t=>{ const [a,b,w,p]=t;
-      const row=team=>`<div class="tierow ${team===w?'tiewin':'tielose'} teamlink" data-team="${attr(team)}">${fl(team)}<span class="nm">${team}</span></div>`;
-      return `<div class="tiebox">${row(a)}${row(b)}<div class="tiep">${w} ${p}%</div></div>`; };
-    const col=(title,ties)=>`<div class="brkcol"><h5>${title}</h5>${ties.map(tieBox).join("")}</div>`;
-    h += `<div class="hint" style="margin:2px 0 8px">Projected knockout path — the favourite advances each tie (win % shown). Pairings are rating-seeded; real R32 matchups depend on final group standings.</div>`;
-    h += `<div class="brkwrap">
-       ${col('Round of 32',BRACKET.r32)}
-       ${col('Round of 16',BRACKET.r16)}
-       ${col('Quarters',BRACKET.qf)}
-       ${col('Semis',BRACKET.sf)}
-       ${col('Final',BRACKET.f)}
-       <div class="brkcol"><h5>Champion</h5><div class="champbox teamlink" data-team="${attr(BRACKET.champion)}">${fl(BRACKET.champion)}<br><b>${BRACKET.champion}</b></div></div>
+    const tmatch=t=>{ const [a,b,w,p]=t;
+      const row=tm=>`<div class="trow ${tm===w?'tw':'tl'} teamlink" data-team="${attr(tm)}">${fl(tm)}<span class="qn">${tm}</span></div>`;
+      return `<div class="tmatch">${row(a)}${row(b)}<div class="tprob">${w} ${p}%</div></div>`; };
+    const round=(title,ties,first)=>`<div class="tround ${first?'first':''}"><h5>${title}</h5>${ties.map(tmatch).join("")}</div>`;
+    h += `<div class="hint" style="margin:2px 0 6px">🗺️ <b>Projected knockout bracket</b> — favourite advances (win % shown). R32 qualifiers above feed the Round of 16.</div>`;
+    h += `<div class="tree">
+       ${round('Round of 16',BRACKET.r16,true)}
+       ${round('Quarter-finals',BRACKET.qf)}
+       ${round('Semi-finals',BRACKET.sf)}
+       ${round('Final',BRACKET.f)}
+       <div class="tround"><h5>Champion</h5><div class="champbox teamlink" data-team="${attr(BRACKET.champion)}">${fl(BRACKET.champion)}<br><b>${BRACKET.champion}</b></div></div>
       </div>`;
   }
   // ---- Monte Carlo title race ----
