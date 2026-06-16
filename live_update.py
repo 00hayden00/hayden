@@ -166,14 +166,36 @@ def main():
               "The dashboard will keep showing the latest simulation snapshot until then.")
         sys.exit(1)
 
+    # news (keyless) refreshes a few times/day; odds (if key) every few hours
+    try:
+        from news_update import main as refresh_news
+    except Exception:
+        refresh_news = None
+    NEWS_EVERY = 2*3600
+    ODDS_EVERY = 3*3600
+
+    def refresh_extras(state):
+        now = time.time()
+        if refresh_news and now - state.get("news", 0) >= NEWS_EVERY:
+            print("  refreshing news...")
+            try: refresh_news(); state["news"] = now
+            except Exception as e: print("  news refresh failed:", e)
+        if os.environ.get("ODDS_API_KEY") and now - state.get("odds", 0) >= ODDS_EVERY:
+            print("  refreshing FanDuel odds...")
+            try: subprocess.run([sys.executable, "odds_update.py"], timeout=120); state["odds"] = now
+            except Exception as e: print("  odds refresh failed:", e)
+
     if args.watch:
-        print(f"Live mode: refreshing every {args.watch}s. Ctrl-C to stop.")
+        print(f"Live mode: scores every {args.watch}s, news ~2h, odds ~3h. Ctrl-C to stop.")
+        state = {}
         while True:
             print(time.strftime("[%H:%M:%S] updating..."))
             update_once(api_key, args.competition)
+            refresh_extras(state)
             time.sleep(args.watch)
     else:
         update_once(api_key, args.competition)
+        refresh_extras({})
 
 if __name__ == "__main__":
     main()

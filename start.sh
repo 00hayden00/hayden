@@ -23,6 +23,8 @@ if [ ! -f sim_results.js ]; then
   echo "Generating initial predictions (one-time, ~30-60s)..."
   "$PY" simulate_worldcup.py >/dev/null
 fi
+echo "Fetching latest news..."
+"$PY" news_update.py >/dev/null 2>&1 || true
 
 pids=()
 cleanup() { echo; echo "Stopping..."; for p in "${pids[@]}"; do kill "$p" 2>/dev/null || true; done; }

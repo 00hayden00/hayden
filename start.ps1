@@ -31,6 +31,8 @@ if (-not (Test-Path ".\sim_results.js")) {
     Write-Host "Generating initial predictions (one-time, ~30-60s)..." -ForegroundColor Cyan
     & $py simulate_worldcup.py | Out-Null
 }
+Write-Host "Fetching latest news..." -ForegroundColor Cyan
+& $py news_update.py 2>$null | Out-Null
 
 # --- launch the web server in its own window -------------------------------
 Write-Host "Starting web server on http://localhost:8000 ..." -ForegroundColor Cyan

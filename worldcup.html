@@ -299,6 +299,7 @@
 <script src="live_data.js" onerror="/* optional: only present when live_update.py has run */"></script>
 <script src="odds_data.js" onerror="/* optional: only present when odds_update.py has run */"></script>
 <script src="model_report.js" onerror="/* optional: only present when backtest.py has run */"></script>
+<script src="news_data.js" onerror="/* optional: live news, refreshed by news_update.py */"></script>
 <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js" onerror="/* offline: globe falls back to dots */"></script>
 <script>
 "use strict";
@@ -891,11 +892,16 @@ function renderValue(){
 
 function newsIcon(n){ return n.team ? fl(n.team) : `<span class="em">${n.emoji||"📰"}</span>`; }
 function renderNews(){
-  const items = NEWS.slice().sort((a,b)=> (a.d<b.d?1:a.d>b.d?-1:0));   // most recent first
+  const feed = window.NEWSFEED && window.NEWSFEED.items;
+  let items, source;
+  if(feed && feed.length){ items = feed.slice().sort((a,b)=>a.d<b.d?1:-1); source = window.NEWSFEED.source||"live"; }
+  else { items = NEWS.slice().sort((a,b)=>(a.d<b.d?1:a.d>b.d?-1:0)); source = "curated"; }
+  const title = n => n.link ? `<a href="${n.link}" target="_blank" rel="noopener">${n.title}</a>` : n.title;
   $("#tickRow").innerHTML = items.concat(items).map(n=>`<span>${newsIcon(n)} <b>${n.title}</b></span>`).join("");
   $("#newsList").innerHTML = items.map(n=>`<div class="news">
-    <div class="h">${newsIcon(n)} ${n.title}</div>
-    <div class="body">${n.body}</div><div class="meta">${n.tag} · ${n.when||n.d}</div></div>`).join("");
+    <div class="h">${newsIcon(n)} ${title(n)}</div>
+    ${n.body?`<div class="body">${n.body}</div>`:""}
+    <div class="meta">${n.tag?n.tag+" · ":""}${n.when||n.d} · ${source}</div></div>`).join("");
 }
 
 function renderScoreTicker(){
@@ -1033,6 +1039,7 @@ function refreshLiveData(){
     fetch("sim_results.js"+bust).then(r=>r.ok?r.text():Promise.reject()),
     fetch("live_data.js"+bust).then(r=>r.ok?r.text():Promise.reject()),
     fetch("odds_data.js"+bust).then(r=>r.ok?r.text():Promise.reject()),
+    fetch("news_data.js"+bust).then(r=>r.ok?r.text():Promise.reject()),
   ]).then(res=>{
     let changed=false;
     res.forEach(p=>{ if(p.status==="fulfilled"){ try{ (0,eval)(p.value); changed=true; }catch(e){} }});
