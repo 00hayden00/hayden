@@ -14,3 +14,7 @@ intl_results.csv
 
 # saved API key (keep secrets out of git)
 apikey.txt
+
+# per-game prediction log (accrues per machine)
+predictions_log.json
+news_data.js

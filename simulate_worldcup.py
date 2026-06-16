@@ -281,8 +281,10 @@ def threeway(h, a):
 
 BASE_RATE = (0.49, 0.24, 0.27)          # historical home/draw/away frequencies (baseline)
 tn=tc=0; tb=tl=0.0; bb=bl=bc=0.0
+backfill_preds = {}                      # pre-tournament forecast for completed games (no leakage)
 for d,g,h,a,hs,as_ in PLAYED:
     pr = threeway(h,a); oc = 0 if hs>as_ else 2 if as_>hs else 1
+    backfill_preds[f"{g}|{h}|{a}"] = pr
     tn += 1
     tb += sum((pr[k]-(1 if k==oc else 0))**2 for k in range(3))
     tl += -math.log(max(1e-12, pr[oc]))
@@ -336,6 +338,33 @@ for date, g, home, away in REMAINING:
 # mark the Jun 14/15 games as TODAY for the dashboard
 for gr in game_results:
     if gr["date"] in ("Sun Jun 14","Mon Jun 15"): gr["status"]="TODAY"
+
+# ---------------------------------------------------------------------------
+# Persistent per-game prediction log: freeze each pre-match forecast (pick +
+# confidence + probs). Upcoming games are refreshed each run until they kick
+# off; once final they're no longer in game_results, so the last value stays
+# frozen. Completed games never logged live get a reconstructed pre-tournament
+# forecast (flagged backfilled).
+# ---------------------------------------------------------------------------
+PRED_LOG_FILE = "predictions_log.json"
+pred_log = {}
+if os.path.exists(PRED_LOG_FILE):
+    try: pred_log = json.load(open(PRED_LOG_FILE, encoding="utf-8"))
+    except Exception: pred_log = {}
+for gr in game_results:
+    pred_log[f"{gr['group']}|{gr['home']}|{gr['away']}"] = {
+        "pick":gr["pick"], "conf":gr["conf"],
+        "pH":gr["pHome"], "pD":gr["pDraw"], "pA":gr["pAway"], "backfilled":False}
+for d,g,h,a,hs,as_ in PLAYED:
+    key = f"{g}|{h}|{a}"
+    if key not in pred_log and key in backfill_preds:
+        pH,pD,pA = backfill_preds[key]
+        pick = "home" if pH>=pD and pH>=pA else "away" if pA>=pD else "draw"
+        pred_log[key] = {"pick":pick, "conf":round(100*max(pH,pD,pA)),
+                         "pH":round(pH,3),"pD":round(pD,3),"pA":round(pA,3), "backfilled":True}
+json.dump(pred_log, open(PRED_LOG_FILE,"w",encoding="utf-8"), ensure_ascii=False)
+print(f"Prediction log: {len(pred_log)} games frozen "
+      f"({sum(1 for v in pred_log.values() if v['backfilled'])} backfilled)")
 
 # ---------------------------------------------------------------------------
 # 2) Full-tournament Monte Carlo: qualification % + title odds
@@ -507,6 +536,7 @@ SIM = {
  "bracket": bracket,
  "squads": squads,
  "track": track,
+ "predlog": pred_log,
 }
 with open("sim_results.js","w",encoding="utf-8") as f:
     f.write("window.SIM = " + json.dumps(SIM, ensure_ascii=False) + ";\n")

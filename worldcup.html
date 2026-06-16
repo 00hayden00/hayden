@@ -125,6 +125,8 @@
   .b-lock{background:#0c3; color:#04130a}
   .b-lean{background:#274b34;color:#cdebd6}
   .b-coin{background:#3a2630;color:#ffc4cf}
+  .b-hit{background:#0c3;color:#04130a}
+  .b-miss{background:#6a2020;color:#ffd0d0}
 
   /* Standings */
   .gcard{border:1px solid var(--line);border-radius:14px;background:var(--panel);margin-bottom:14px;overflow:hidden}
@@ -436,7 +438,7 @@ const FALLBACK_CHAMP = {team:"Spain", note:"Most-likely single winner — yet st
 
 // ---- Data is (re)built here from window.SIM, overlaid with window.LIVE -----
 let FIXTURES, STANDINGS, TITLE, GOLDEN, SIM_META, SIM_RUNS=0, LIVE_MATCHES=[], LAST_UPDATED="", ALIVE=new Set();
-let BRACKET=null, SQUADS_D={}, TEAMGROUP={};
+let BRACKET=null, SQUADS_D={}, TEAMGROUP={}, PREDLOG={};
 const attr=s=>String(s).replace(/&/g,"&amp;").replace(/"/g,"&quot;");
 function buildData(){
   const SIM = window.SIM || null;
@@ -484,6 +486,7 @@ function buildData(){
   ALIVE = new Set();
   Object.values(STANDINGS).forEach(rows=>rows.forEach(r=>{ if(r.q==null || r.q>0) ALIVE.add(r.team); }));
   BRACKET = SIM ? SIM.bracket : null;
+  PREDLOG = SIM ? (SIM.predlog||{}) : {};
   SQUADS_D = SIM ? (SIM.squads||{}) : {};
   TEAMGROUP = {};
   Object.keys(STANDINGS).forEach(g=>STANDINGS[g].forEach(r=>TEAMGROUP[r.team]=g));
@@ -640,6 +643,20 @@ function matchCard(m,showPred){
           <span><i style="background:#3a86c8"></i>${fl(m.away)} ${m.away} <b>${pa}%</b></span>
         </div>
       </div>`;
+    }
+  }
+  // predicted-vs-actual recap on finished games (Scores page)
+  if(finished){
+    const pl = PREDLOG[m.group+"|"+m.home+"|"+m.away];
+    if(pl){
+      const oc = m.hs>m.as?"home":m.as>m.hs?"away":"draw";
+      const hit = pl.pick===oc;
+      const whoTxt = pl.pick==="draw" ? "Draw" : `${fl(pl.pick==="home"?m.home:m.away)} ${pl.pick==="home"?m.home:m.away} to win`;
+      const pConf = {home:Math.round((pl.pH||0)*100),draw:Math.round((pl.pD||0)*100),away:Math.round((pl.pA||0)*100)}[oc];
+      pred += `<div class="pred"><span class="lab">Predicted</span>
+          <span class="pick">${whoTxt} <span class="hint">(${pl.conf}%)</span></span>
+          <span class="badge ${hit?'b-hit':'b-miss'}">${hit?'✓ HIT':'✗ MISS'}</span>
+          <span class="hint">model gave the actual result ${pConf}%${pl.backfilled?' · reconstructed pre-match':''}</span></div>`;
     }
   }
   return `<div class="match">
