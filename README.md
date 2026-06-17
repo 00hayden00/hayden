@@ -133,6 +133,15 @@ in snapshot mode. To stop, close the helper windows (Windows) or press Ctrl+C
 > run the updater from. Run `dir` (Windows) or `ls` to confirm you can see
 > `live_update.py` — if you can't, you're in the wrong folder.
 
+### View it on your phone
+
+Run `powershell -ExecutionPolicy Bypass -File .\phone.ps1` on the PC. It starts the
+server + updater, opens the firewall for port 8000, and prints a
+`http://<your-PC-IP>:8000/worldcup.html` URL — open that in Safari on an iPhone on
+the **same Wi-Fi**. (Add to Home Screen for an app-like icon.) If `cloudflared` is
+installed it also opens a public `trycloudflare.com` link so you can reach it from
+any network.
+
 > Why the server? Browsers block a file opened with `file://` from fetching local
 > files, so auto-refresh only works over `http://`. Without the API key it simply
 > keeps showing the latest snapshot.
