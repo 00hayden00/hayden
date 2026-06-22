@@ -32,7 +32,7 @@ import os, sys, json, time, argparse, subprocess, urllib.request, urllib.error
 # Map API team names -> the names used in simulate_worldcup.py / the dashboard.
 ALIASES = {
     "Korea Republic":"South Korea", "Republic of Korea":"South Korea", "Korea":"South Korea",
-    "Bosnia and Herzegovina":"Bosnia & H.", "Bosnia-Herzegovina":"Bosnia & H.",
+    "Bosnia and Herzegovina":"Bosnia & H.", "Bosnia-Herzegovina":"Bosnia & H.", "Bosnia & Herzegovina":"Bosnia & H.",
     "Turkey":"Türkiye", "Turkiye":"Türkiye",
     "United States":"USA", "United States of America":"USA",
     "Czech Republic":"Czechia",

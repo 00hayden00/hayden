@@ -38,11 +38,16 @@ def _get(url):
         return json.load(r), remaining
 
 def wc_sport_key(key):
+    # must be the men's SOCCER World Cup — the API also lists cricket/other "World Cups"
     try:
         data, _ = _get(f"{API}/sports/?apiKey={key}")
         for s in data:
-            if "world cup" in s.get("title","").lower() or "world_cup" in s.get("key",""):
+            if s.get("key") == "soccer_fifa_world_cup":
                 return s["key"]
+        for s in data:
+            k = s.get("key", "")
+            if k.startswith("soccer") and "world_cup" in k and "women" not in k:
+                return k
     except Exception:
         pass
     return "soccer_fifa_world_cup"
