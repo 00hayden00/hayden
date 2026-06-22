@@ -26,6 +26,14 @@ if (-not $key) {
     if ($key) { $key.Trim() | Set-Content ".\apikey.txt"; Write-Host "Saved to apikey.txt (gitignored)." -ForegroundColor Green }
 }
 
+# --- resolve the odds key (env var -> odds_key.txt -> prompt) for the Value tab
+$okey = $env:ODDS_API_KEY
+if (-not $okey -and (Test-Path ".\odds_key.txt")) { $okey = (Get-Content ".\odds_key.txt" -Raw).Trim() }
+if (-not $okey) {
+    $okey = Read-Host "Paste your ODDS_API_KEY for FanDuel odds (or press Enter to skip)"
+}
+if ($okey) { $okey = $okey.Trim(); $okey | Set-Content ".\odds_key.txt"; Write-Host "FanDuel odds enabled (refresh every 3h)." -ForegroundColor Green }
+
 # --- ensure predictions exist (generate once if missing) -------------------
 if (-not (Test-Path ".\sim_results.js")) {
     Write-Host "Generating initial predictions (one-time, ~30-60s)..." -ForegroundColor Cyan
@@ -40,8 +48,11 @@ Start-Process powershell -ArgumentList "-NoExit", "-Command", "$py -m http.serve
 
 # --- launch the live updater in its own window (only if we have a key) ------
 if ($key) {
-    Write-Host "Starting live updater (refresh every 60s) ..." -ForegroundColor Cyan
-    Start-Process powershell -ArgumentList "-NoExit", "-Command", "`$env:FOOTBALL_API_KEY='$key'; $py live_update.py --watch 60" -WorkingDirectory $PSScriptRoot
+    Write-Host "Starting live updater (scores 60s, news 2h, odds 3h) ..." -ForegroundColor Cyan
+    $cmd = "`$env:FOOTBALL_API_KEY='$key';"
+    if ($okey) { $cmd += " `$env:ODDS_API_KEY='$okey';" }
+    $cmd += " $py live_update.py --watch 60"
+    Start-Process powershell -ArgumentList "-NoExit", "-Command", $cmd -WorkingDirectory $PSScriptRoot
 } else {
     Write-Host "No API key - running in snapshot mode (no live score updates)." -ForegroundColor Yellow
 }

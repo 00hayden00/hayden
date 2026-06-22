@@ -193,7 +193,7 @@ def main():
     except Exception:
         refresh_news = None
     NEWS_EVERY = 2*3600
-    ODDS_EVERY = 24*3600          # FanDuel odds once per day (well under the 500/mo limit)
+    ODDS_EVERY = 3*3600          # FanDuel odds every 3 hours
 
     def refresh_extras(state):
         now = time.time()

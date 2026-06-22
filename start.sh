@@ -18,6 +18,14 @@ if [ -z "$KEY" ]; then
   [ -n "$KEY" ] && echo "$KEY" > apikey.txt && echo "Saved to apikey.txt (gitignored)."
 fi
 
+# resolve odds key for the FanDuel Value tab: env -> odds_key.txt -> prompt
+OKEY="${ODDS_API_KEY:-}"
+[ -z "$OKEY" ] && [ -f odds_key.txt ] && OKEY=$(tr -d '\r\n' < odds_key.txt)
+if [ -z "$OKEY" ]; then
+  read -r -p "Paste your ODDS_API_KEY for FanDuel odds (or press Enter to skip): " OKEY
+  [ -n "$OKEY" ] && echo "$OKEY" > odds_key.txt
+fi
+
 # ensure predictions exist (generate once if missing)
 if [ ! -f sim_results.js ]; then
   echo "Generating initial predictions (one-time, ~30-60s)..."
@@ -31,8 +39,8 @@ cleanup() { echo; echo "Stopping..."; for p in "${pids[@]}"; do kill "$p" 2>/dev
 trap cleanup EXIT INT TERM
 
 if [ -n "$KEY" ]; then
-  echo "Starting live updater (refresh every 60s)..."
-  FOOTBALL_API_KEY="$KEY" "$PY" live_update.py --watch 60 &
+  echo "Starting live updater (scores 60s, news 2h, odds 3h)..."
+  FOOTBALL_API_KEY="$KEY" ODDS_API_KEY="$OKEY" "$PY" live_update.py --watch 60 &
   pids+=($!)
 else
   echo "No API key - snapshot mode (no live score updates)."

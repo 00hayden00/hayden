@@ -18,3 +18,4 @@ apikey.txt
 # per-game prediction log (accrues per machine)
 predictions_log.json
 news_data.js
+odds_key.txt
