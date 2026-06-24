@@ -148,6 +148,10 @@ def update_once(api_key, competition):
     with open("live_data.js", "w", encoding="utf-8") as f:
         f.write("window.LIVE = " + json.dumps(live, ensure_ascii=False) + ";\n")
 
+    # full schedule (correct dates/home-away/status) for the simulator
+    with open("fixtures.json", "w", encoding="utf-8") as f:
+        json.dump(clean, f, ensure_ascii=False)
+
     # results_override.json for the simulator (finished games only)
     overrides = [[m["group"], m["home"], m["away"], m["hs"], m["as"]]
                  for m in clean if m["status"] == "FINISHED"

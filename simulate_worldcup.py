@@ -178,11 +178,31 @@ for _,g,h,a,*_ in PLAYED: GROUPS[g].update([h,a])
 for _,g,h,a in REMAINING: GROUPS[g].update([h,a])
 
 # ---------------------------------------------------------------------------
-# Live override: if live_update.py has written real results, fold them in so
-# predictions reflect reality. results_override.json = [[group,home,away,hs,as],...]
+# Live schedule: prefer fixtures.json (the real schedule from the API, written
+# by live_update.py) so dates, home/away order, and results all match reality.
+# Falls back to results_override.json, then to the hardcoded snapshot above.
 # ---------------------------------------------------------------------------
 import os
-if os.path.exists("results_override.json"):
+from datetime import datetime as _dt
+if os.path.exists("fixtures.json"):
+    with open("fixtures.json", encoding="utf-8") as f:
+        _fx = json.load(f)
+    PLAYED, REMAINING = [], []
+    for m in _fx:
+        g, h, a, st = m.get("group"), m.get("home"), m.get("away"), m.get("status")
+        if not g or h not in RATINGS or a not in RATINGS:
+            continue
+        try: d = _dt.fromisoformat((m.get("utc") or "").replace("Z","+00:00")).strftime("%a %b %d")
+        except Exception: d = ""
+        if st == "FINISHED" and m.get("hs") is not None and m.get("as") is not None:
+            PLAYED.append((d, g, h, a, m["hs"], m["as"]))
+        else:
+            REMAINING.append((d, g, h, a))
+    GROUPS = defaultdict(set)
+    for _,g,h,a,*_ in PLAYED: GROUPS[g].update([h,a])
+    for _,g,h,a in REMAINING: GROUPS[g].update([h,a])
+    print(f"Loaded live schedule from fixtures.json: {len(PLAYED)} played, {len(REMAINING)} remaining")
+elif os.path.exists("results_override.json"):
     with open("results_override.json", encoding="utf-8") as f:
         overrides = json.load(f)
     # base truth = hardcoded results, then augment/correct with the live overrides
