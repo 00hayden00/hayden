@@ -34,6 +34,12 @@ if (-not $okey) {
 }
 if ($okey) { $okey = $okey.Trim(); $okey | Set-Content ".\odds_key.txt"; Write-Host "FanDuel odds enabled (refresh every 3h)." -ForegroundColor Green }
 
+# show what's loaded so it's never a mystery
+if ($key)  { Write-Host "Football key: loaded (live scores ON)." -ForegroundColor Green }
+else       { Write-Host "Football key: MISSING - snapshot only. Delete apikey.txt to re-enter." -ForegroundColor Yellow }
+if ($okey) { Write-Host "Odds key: loaded (FanDuel Value ON)." -ForegroundColor Green }
+else       { Write-Host "Odds key: not set - Value tab off. Delete odds_key.txt to re-enter." -ForegroundColor Yellow }
+
 # --- ensure predictions exist (generate once if missing) -------------------
 if (-not (Test-Path ".\sim_results.js")) {
     Write-Host "Generating initial predictions (one-time, ~30-60s)..." -ForegroundColor Cyan
