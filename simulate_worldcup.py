@@ -415,7 +415,30 @@ pts_sum = Counter()
 boot_goals = Counter()   # (team, player) -> total goals across all sims
 boot_wins  = Counter()   # (team, player) -> times this player was a sim's top scorer
 
-def attribute(team, n, tally):       # spread n known goals across a team's scorers
+# Real goals scored so far (live), credited to actual players — so the Golden
+# Boot projection = actual goals + simulated future goals (not past goals spread
+# by squad share, which hid the real top scorers like Messi).
+import unicodedata
+def _nl(s): return "".join(c for c in unicodedata.normalize("NFD", s or "") if unicodedata.category(c) != "Mn").lower()
+ACTUAL_SEED = {}
+if os.path.exists("live_data.js"):
+    try:
+        _raw = open("live_data.js", encoding="utf-8").read()
+        _ld = json.loads(_raw[_raw.index("{"):_raw.rindex("}")+1])
+        for s in _ld.get("scorers", []):
+            tm, full, gls = s.get("team"), s.get("name",""), s.get("goals") or 0
+            if tm not in RATINGS or gls <= 0: continue
+            disp = full                                  # default to the real (full) name
+            an = _nl(full)
+            for nm, _w in SQUADS.get(tm, []):            # match to a squad player by last name
+                if nm == "Others": continue
+                ln = _nl(nm).split()[-1]
+                if ln and ln in an: disp = nm; break
+            ACTUAL_SEED[(tm, disp)] = ACTUAL_SEED.get((tm, disp), 0) + gls
+    except Exception:
+        pass
+
+def attribute(team, n, tally):       # spread n simulated goals across a team's scorers
     for _ in range(n):
         nm = scorer(team)
         if nm != "Others": tally[(team, nm)] += 1
@@ -428,7 +451,7 @@ def rank_group(g, tally):
         elif as_>hs: pts[a]+=3
         else: pts[h]+=1; pts[a]+=1
     for h,a,hs,as_ in played_by_group[g]:
-        apply(h,a,hs,as_); attribute(h,hs,tally); attribute(a,as_,tally)
+        apply(h,a,hs,as_)                                # standings only; real goals seeded via ACTUAL_SEED
     for h,a in remaining_by_group[g]:
         hg,ag,sc = sim_match(h,a,want_scorers=True); apply(h,a,hg,ag)
         for tm,nm in sc: tally[(tm,nm)] += 1
@@ -445,7 +468,7 @@ def ko_play(a, b, tally):
     return a if random.random() < min(0.75,max(0.25,pa)) else b
 
 for _ in range(TOURNAMENT_SIMS):
-    tally = Counter()
+    tally = Counter(ACTUAL_SEED)        # seed with real goals scored so far
     winners=[]; runners=[]; thirds=[]
     for g in GROUPS:
         order,pts,gd,gf = rank_group(g, tally)
