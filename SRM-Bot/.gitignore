@@ -1,0 +1,18 @@
+# The bot's memory lives on the laptop only — never commit lead data (PII)
+data/
+*.db
+*.db-journal
+*.sqlite*
+
+# Local config holds your personal weights/mappings
+config.json
+
+# Raw report drops, if you keep them next to the repo
+reports/
+*.csv
+!samples/*.csv
+
+# Python
+__pycache__/
+*.pyc
+.venv/

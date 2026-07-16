@@ -1,0 +1,45 @@
+{
+  "scoring": {
+    "weights": {
+      "amount": 0.4,
+      "source": 0.2,
+      "recency": 0.25,
+      "credit": 0.15
+    },
+    "full_score_loan_amount": 400000,
+    "unknown_amount_score": 0.3,
+    "value_to_loan_ratio": 0.5,
+    "recency_half_life_days": 14,
+    "source_quality": {
+      "demandconversions": 1.0,
+      "atlasaddress": 0.6
+    },
+    "credit_tiers": {
+      "excellent": 1.0,
+      "good": 0.9,
+      "fair": 0.7,
+      "poor": 0.4,
+      "unknown": 0.7
+    },
+    "outcome_adjustments": {
+      "callback": 15,
+      "appointment": 20,
+      "per_no_answer": -4
+    }
+  },
+  "sources": {
+    "demandconversions": {
+      "columns": {
+        "external_id": "Lead ID",
+        "phone": "Phone",
+        "loan_amount": "Loan Amount"
+      }
+    },
+    "atlasaddress": {
+      "columns": {
+        "name": "Owner Name",
+        "est_value": "Estimated Value"
+      }
+    }
+  }
+}

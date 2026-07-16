@@ -1,0 +1,4 @@
+Lead ID,Name,Phone,Email,City,State,Loan Amount,Credit Score,Created
+DC-1001,Jane Sample,(410) 555-0142,jane.sample@example.com,Annapolis,MD,385000,742,2026-07-15
+DC-1002,Rob Example,443-555-0177,rob.example@example.com,Baltimore,MD,210000,688,2026-07-15
+DC-1003,Pat Demo,301.555.0100,,Rockville,MD,505000,windowed,2026-07-14
