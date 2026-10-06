@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "reversepilot": {
+      "type": "http",
+      "url": "https://api.reversepilot.com/mcp/",
+      "headers": {
+        "Authorization": "Bearer ${REVERSEPILOT_MCP_TOKEN}"
+      }
+    }
+  }
+}
